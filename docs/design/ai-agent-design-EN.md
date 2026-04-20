@@ -33,7 +33,7 @@ This design abstracts AI Agent into three core objects:
               ▼
 ┌─────────────────────────────────────┐
 │      AgentRuntime (Runtime Carrier)  │
-│    - Handler + Framework containers  │
+│    - Agent Handler + Agent Framework │
 │    - Binds public Harness configs    │
 │    - 1:1 mapping to Pod              │
 └─────────────────────────────────────┘
@@ -61,7 +61,7 @@ This design abstracts AI Agent into three core objects:
 
 ### 3.1 Object Definition
 
-AgentRuntime is a merged object of Handler and Agent Framework, corresponding to a Pod instance.
+AgentRuntime is a merged object of Agent Handler and Agent Framework, corresponding to a Pod instance.
 
 #### 3.1.1 Design Considerations
 
@@ -74,34 +74,82 @@ AgentRuntime is a merged object of Handler and Agent Framework, corresponding to
 
 **Advantages**:
 - Only one Controller needed, platform layer responsibilities are clear
-- Handlers can be provided by framework ecosystem, decoupling development responsibilities
-- New framework integration only requires providing a Handler image, no platform code modification needed
+- Agent Handlers can be provided by framework ecosystem, decoupling development responsibilities
+- New framework integration only requires providing an Agent Handler image, no platform code modification needed
 
-#### 3.1.2 Pod Container Configuration
+#### 3.1.2 Agent Handler and Agent Framework Process Mapping Modes
+
+**Key Design Consideration**: The Agent Handler and Agent Framework processes in AgentRuntime can have multiple mapping relationships, decided by the Agent Handler itself.
+
+**Mode A: Single Process Multiple Agents Mode**
+
+```
+Pod
+├── Agent Handler container
+└── Agent Framework container
+    └── One Agent Framework process
+        ├── AIAgent-1
+        ├── AIAgent-2
+        └── AIAgent-3
+```
+
+- One Agent Handler and one Agent Framework process
+- One Agent Framework process runs multiple AI Agents internally
+- Agent Framework process implements internal Agent routing and isolation
+
+**Considerations**:
+- Suitable for frameworks that natively support multi-Agent scenarios (such as CrewAI, ADK multi-Agent)
+- High resource efficiency, reduces process overhead
+- Agent Framework process responsible for internal Agent state isolation
+
+**Mode B: Multiple Processes Single Agent Mode**
+
+```
+Pod
+├── Agent Handler container
+│   └── Starts multiple Agent Framework processes
+├── Agent Framework process-1 ──► AIAgent-1
+├── Agent Framework process-2 ──► AIAgent-2
+└── Agent Framework process-3 ──► AIAgent-3
+```
+
+- One Agent Handler starts multiple Agent Framework processes
+- Each Agent Framework process corresponds to one AI Agent
+- Process-level isolation, each Agent runs independently
+
+**Considerations**:
+- Suitable for scenarios requiring strong isolation
+- Single Agent failure doesn't affect other Agents
+- Higher resource overhead, but stronger isolation
+
+**Decision Basis**: Which mode to adopt is decided by the Agent Handler based on framework characteristics, business requirements, and resource conditions. The platform layer doesn't enforce constraints, only provides infrastructure support (such as shared PID namespace for Handler to manage multiple processes).
+
+#### 3.1.3 Pod Container Configuration
 
 **Shared Namespace Decisions**:
 
 | Dimension | Decision | Considerations |
 |-----------|----------|----------------|
-| Process Namespace | Shared | Handler needs to monitor Framework process; shared PID namespace reduces isolation overhead |
-| Network Namespace | Shared | Handler and Framework communication doesn't need cross-network stack, minimal overhead |
-| File System | Isolated | Handler and Framework images are released independently, need independent file spaces |
+| Process Namespace | Shared | Agent Handler needs to monitor Agent Framework process; shared PID namespace reduces isolation overhead, also supports multi-process management |
+| Network Namespace | Shared | Agent Handler and Agent Framework communication doesn't need cross-network stack, minimal overhead |
+| File System | Isolated | Agent Handler and Agent Framework images are released independently, need independent file spaces |
 
 **Considerations**:
-- Handler and Framework are tightly coupled process relationships, no strong security isolation requirement
+- Agent Handler and Agent Framework are tightly coupled process relationships, no strong security isolation requirement
 - Lightweight container isolation, reduce overhead
 - Requirement for independent image release and upgrade
+- Shared PID namespace supports Agent Handler starting and managing multiple Agent Framework processes
 
-#### 3.1.3 Container Merge Strategy (Embedded Sandbox)
+#### 3.1.4 Container Merge Strategy (Embedded Sandbox)
 
-When using embedded Sandbox mode, SandboxTemplate defines the Pod base specification, and AgentRuntime's Handler and Framework containers use **append mode** for merging.
+When using embedded Sandbox mode, SandboxTemplate defines the Pod base specification, and AgentRuntime's Agent Handler and Agent Framework containers use **append mode** for merging.
 
 **Considerations**:
 - SandboxTemplate may already contain code execution containers, monitoring sidecars, etc.
-- AgentRuntime's Handler and Framework are business core containers
+- AgentRuntime's Agent Handler and Agent Framework are business core containers
 - Append mode preserves SandboxTemplate integrity while overlaying Agent containers
 
-#### 3.1.4 CRD Structure Example
+#### 3.1.5 CRD Structure Example
 
 ```yaml
 apiVersion: ai.k8s.io/v1
@@ -110,13 +158,13 @@ metadata:
   name: runtime-001
   namespace: tenant-a
 spec:
-  handler:
+  agentHandler:
     image: adk-handler:v1.2.0
     resources:
       limits:
         cpu: "500m"
         memory: "512Mi"
-  framework:
+  agentFramework:
     image: adk-runtime:v1.2.0
     resources:
       limits:
@@ -125,8 +173,7 @@ spec:
 
   harness:
     mcp:
-      - name: filesystem-mcp
-      - name: github-mcp
+      - name: mcp-registry-default    # MCP Registry configuration
     memory:
       - name: redis-memory
     sandbox:
@@ -185,7 +232,7 @@ AIAgent is an independent business object that can be scheduled to different Age
 **Considerations**:
 - Follow K8s conventions, familiar to users
 - name facilitates human recognition and kubectl operations
-- uid for absolutely unique identifier, Handler can choose which to use
+- uid for absolutely unique identifier, Agent Handler can choose which to use
 
 #### 4.1.3 Scheduling Mode
 
@@ -239,10 +286,12 @@ spec:
 
   harnessOverride:
     mcp:
-      - name: filesystem-mcp
-        config:
-          readOnly: true
-      - deny: [github-mcp]
+      - name: mcp-registry-default
+        allowedServers:         # Override allowed MCP Servers
+          - github
+          - browser
+        deniedServers:          # Add denied MCP Servers
+          - filesystem
     memory:
       - name: redis-memory
         config:
@@ -278,7 +327,7 @@ Harness is an independent CRD for AI Agent scaffolding capabilities, defining co
 **Considerations**:
 - Multiple AgentRuntimes/AIAgents can reference the same Harness
 - Capability configuration managed independently, modification doesn't require changing Agent CRD
-- Handler needs standardized capability definitions to adapt different frameworks
+- Agent Handler needs standardized capability definitions to adapt different frameworks
 
 #### 5.1.2 Scope Decision
 
@@ -318,16 +367,42 @@ Currently supported capability types (extensible later):
 
 #### 5.1.5 Spec Structure
 
-Adopt design where each type has independent spec field:
+Adopt design where each type has independent spec field.
+
+**MCP Type Special Design**: Since MCP Servers are numerous and varied, it's impossible to enumerate all specific MCP Servers in Harness. Therefore, MCP Harness adopts **Registry Mode**, only configuring MCP Registry connection information and policies for allowed and denied MCP Servers.
 
 ```yaml
 spec:
   type: mcp
-  mcp:                      # Corresponding type's spec field
-    provider: filesystem
-    tools:
-      - read
-      - write
+  mcp:                      # MCP Registry configuration
+    registry:
+      endpoint: https://mcp-registry.example.com
+      authSecretRef: mcp-registry-token
+    allowedServers:         # Allowed MCP Server list (whitelist)
+      - github
+      - browser
+      - filesystem
+    deniedServers:          # Denied MCP Server list (blacklist)
+      - dangerous-tool
+    discoveryPolicy: allowlist  # Discovery policy: allowlist | denylist | all
+```
+
+**Considerations**:
+- MCP Servers cannot be enumerated, Harness only configures Registry not specific Servers
+- Agent Handler standardizes Registry connection and Server discovery mechanism
+- Specific MCP Servers are dynamically decided by Agent business, obtained through Registry
+- Whitelist/blacklist policies control available Server scope
+
+**Other Type Examples**:
+
+```yaml
+spec:
+  type: memory
+  memory:
+    backend: redis
+    config:
+      host: redis-server
+      port: 6379
 ```
 
 **Considerations**:
@@ -342,10 +417,11 @@ AgentRuntime references Harness using type grouping:
 ```yaml
 harness:
   mcp:
-    - name: filesystem-mcp
-    - name: github-mcp
+    - name: mcp-registry-default    # MCP Registry configuration
   memory:
     - name: redis-memory
+  sandbox:
+    - name: gvisor-sandbox
 ```
 
 AIAgent customization adopts reference + configuration override mode:
@@ -353,16 +429,20 @@ AIAgent customization adopts reference + configuration override mode:
 ```yaml
 harnessOverride:
   mcp:
-    - name: filesystem-mcp
-        config:
-          readOnly: true
-    - deny: [github-mcp]
+    - name: mcp-registry-default
+      allowedServers:         # Override allowed MCP Servers
+        - github
+        - browser
+      deniedServers:          # Add denied MCP Servers
+        - filesystem
+    # Or deny entire Registry
+    - deny: [mcp-registry-external]
 ```
 
 **Considerations**:
-- Type grouping facilitates managing same-category capabilities
-- Override mode supports inheritance + override, matches user intuition
-- deny supports disabling public capabilities, flexible control
+- MCP Harness references Registry configuration, not specific Servers
+- Agent can customize available Servers by overriding allowedServers/deniedServers
+- deny supports disabling entire Registry, flexible control
 
 #### 5.1.7 Configuration Priority
 
@@ -378,7 +458,7 @@ Controller validates capability availability when creating AIAgent, rejects crea
 
 **Considerations**:
 - Detect problems early, avoid runtime failures
-- Reduce Handler runtime validation burden
+- Reduce Agent Handler runtime validation burden
 
 #### 5.1.9 No Append Constraint
 
@@ -391,37 +471,42 @@ AIAgent cannot append Harness not provided by AgentRuntime, can only override or
 #### 5.1.10 CRD Structure Examples
 
 ```yaml
-# MCP type
+# MCP type - Registry configuration
 apiVersion: ai.k8s.io/v1
 kind: Harness
 metadata:
-  name: filesystem-mcp
+  name: mcp-registry-default
   namespace: tenant-a
 spec:
   type: mcp
   mcp:
-    provider: filesystem
-    tools:
-      - read
-      - write
-    config:
-      rootPath: /data
+    registry:
+      endpoint: https://mcp-registry.example.com
+      authSecretRef: mcp-registry-token
+    allowedServers:         # Allowed MCP Server whitelist
+      - github
+      - browser
+      - filesystem
+      - slack
+    deniedServers:          # Denied MCP Server blacklist
+      - dangerous-tool
+    discoveryPolicy: allowlist  # Discovery policy: allowlist | denylist | all
 
 ---
-# Memory type
+# MCP type - External Registry configuration
 apiVersion: ai.k8s.io/v1
 kind: Harness
 metadata:
-  name: redis-memory
+  name: mcp-registry-external
   namespace: tenant-a
 spec:
-  type: memory
-  memory:
-    backend: redis
-    config:
-      host: redis-server
-      port: 6379
-      ttl: 7200
+  type: mcp
+  mcp:
+    registry:
+      endpoint: https://external-mcp.example.org
+      authSecretRef: external-registry-token
+      # No allowedServers/deniedServers means allow all Servers
+    discoveryPolicy: all
 
 ---
 # Sandbox type (external mode)
@@ -456,19 +541,19 @@ spec:
 
 ### 6.1 Shared Volume Mount Solution
 
-Adopt shared Volume mounting ConfigMap to deliver Harness configuration to Handler.
+Adopt shared Volume mounting ConfigMap to deliver Harness configuration to Agent Handler.
 
 ```
 Pod
-├── Handler container
+├── Agent Handler container
 │   └── /etc/harness/ (ConfigMap mount)
-└── Framework container
+└── Agent Framework container
 │   └── /etc/harness/ (Same Volume)
 ```
 
 #### 6.1.1 Design Considerations
 
-**Question**: How does Handler obtain Harness configuration?
+**Question**: How does Agent Handler obtain Harness configuration?
 
 **Decision**: Shared Volume mount ConfigMap, YAML format.
 
@@ -476,12 +561,12 @@ Pod
 
 | Solution | Advantages | Disadvantages |
 |----------|------------|---------------|
-| Handler accesses K8s API | Real-time change perception | Requires RBAC permissions, increases complexity |
-| Dynamic API push | Real-time update | Handler needs to expose API, increases complexity |
+| Agent Handler accesses K8s API | Real-time change perception | Requires RBAC permissions, increases complexity |
+| Dynamic API push | Real-time update | Agent Handler needs to expose API, increases complexity |
 | Shared Volume mount | Simple, no permissions needed | ConfigMap update has delay (~1 minute) |
 
 Reasons for choosing shared Volume mount:
-- Handler doesn't need K8s access permissions, reduces security risk
+- Agent Handler doesn't need K8s access permissions, reduces security risk
 - Configuration changes don't require Pod restart
 - Simple and reliable, follows Sidecar conventions (like Fluent Bit)
 
@@ -496,7 +581,7 @@ ConfigMap has 1MB size limit.
 
 #### 6.1.3 File Watch Mechanism
 
-Handler can monitor configuration file changes through polling or fsnotify:
+Agent Handler can monitor configuration file changes through polling or fsnotify:
 
 ```go
 // fsnotify monitoring
@@ -568,10 +653,10 @@ Harness reference ──► AIAgent/AgentRuntime use
 
 **Achievement Method**:
 - Unified AgentRuntime Controller, doesn't perceive framework details
-- Handler provided by framework community, responsible for framework adaptation
-- Standardized Harness definition, Handler uniformly converts
+- Agent Handler provided by framework community, responsible for framework adaptation
+- Standardized Harness definition, Agent Handler uniformly converts
 
-**Effect**: New framework integration only requires providing Handler image, no platform code modification needed.
+**Effect**: New framework integration only requires providing Agent Handler image, no platform code modification needed.
 
 ### 8.2 Externalized Capabilities
 
@@ -615,9 +700,10 @@ Harness reference ──► AIAgent/AgentRuntime use
 
 This design achieves the core resource definition for AI Agent in Kubernetes through three-layer object abstraction (AIAgent, AgentRuntime, Harness). Core innovations include:
 
-1. **Handler Pattern**: Platform layer Controller uniformly abstracts, framework layer Handler specifically adapts, decouples development responsibilities
+1. **Agent Handler Pattern**: Platform layer Controller uniformly abstracts, framework layer Agent Handler specifically adapts, decouples development responsibilities
 2. **Agent and Runtime Separation**: Supports dynamic scheduling and migration, analogous to Pod and Node
-3. **Harness Standardization**: External capabilities managed independently, inheritance + override mode customization
-4. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
+3. **Flexible Process Mapping Modes**: Supports single process multiple Agents and multiple processes single Agent modes, decided by Agent Handler
+4. **Harness Standardization**: External capabilities managed independently, inheritance + override mode customization
+5. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
 
 Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios, while maintaining security isolation and multi-tenancy capabilities.

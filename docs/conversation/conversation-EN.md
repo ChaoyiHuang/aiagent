@@ -864,3 +864,80 @@ Documents created:
 **User**: Also record the entire conversation process, including User and Coding Agent's responses, as original prompt record. Store in Chinese and English files each
 
 **Coding Agent**: Creating conversation record files.
+
+---
+
+## 50. File Renaming Request
+
+**User**: Rename the design document filenames to be shorter: change ai-agent-architecture-design to ai-agent-design
+
+**Coding Agent**: Files renamed.
+
+| Original Filename | New Filename |
+|-------------------|--------------|
+| ai-agent-architecture-design-CN.md | ai-agent-design-CN.md |
+| ai-agent-architecture-design-EN.md | ai-agent-design-EN.md |
+
+---
+
+## 51. Conversation Document Separation Request
+
+**User**: Move conversation documents to docs/conversation subdirectory, separate from design subdirectory. And shorten filename ai-agent-conversation to conversation
+
+**Coding Agent**: Completed.
+
+Final file structure:
+```
+docs/
+├── design/
+│   ├── ai-agent-design-CN.md
+│   └── ai-agent-design-EN.md
+└── conversation/
+│   ├── conversation-CN.md
+│   └── conversation-EN.md
+```
+
+---
+
+## 52. MCP Registry Mode Discussion
+
+**User**: In Harness, should MCP example only configure MCP Server registry, and allowed/denied MCP Servers for discovery? Otherwise if only configuring specific MCP servers, Harness cannot enumerate all MCP servers, and Handler cannot do standardized processing
+
+**Coding Agent**: Good point. Current design has the problem that MCP servers cannot be enumerated, and Handler cannot standardize processing of specific servers.
+
+I'll update design documents to adopt MCP Registry mode configuration.
+
+**MCP Harness Registry Configuration Structure**:
+
+```yaml
+spec:
+  type: mcp
+  mcp:
+    registry:
+      endpoint: https://mcp-registry.example.com
+      authSecretRef: mcp-registry-token
+    allowedServers:     # Allowed MCP Server whitelist
+      - github
+      - browser
+      - filesystem
+    deniedServers:      # Denied MCP Server blacklist
+      - dangerous-tool
+    discoveryPolicy: allowlist  # Discovery policy: allowlist | denylist | all
+```
+
+**Key Design Considerations**:
+- MCP Server count is huge and cannot be enumerated
+- Harness only configures Registry not specific Servers
+- Handler standardizes Registry connection and Server discovery mechanism
+- Specific Servers dynamically decided by Agent business, obtained through Registry
+- Whitelist/blacklist policies control available Server scope
+
+---
+
+## 53. Refresh Conversation Document Request
+
+**User**: Refresh the newly added related conversations into Chinese and English conversation documents
+
+**Coding Agent**: Updating conversation documents, adding MCP Registry mode discussion content.
+
+**Coding Agent**: Creating conversation record files.

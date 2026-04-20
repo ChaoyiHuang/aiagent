@@ -863,4 +863,81 @@ SandboxClaim的WarmPool策略：
 
 **用户**：把整个对话的过程也记录下来，包括用户和coding agent的回答，作为原始的prompt的记录。用中英文各存放在一个文件中
 
+**Coding Agent**：创建对话记录文件。
+
+---
+
+## 50. 文件重命名请求
+
+**用户**：把设计文档的文件名改短一些ai-agent-architecture-design 改成ai-agent-design
+
+**Coding Agent**：文件已重命名。
+
+| 原文件名 | 新文件名 |
+|----------|----------|
+| ai-agent-architecture-design-CN.md | ai-agent-design-CN.md |
+| ai-agent-architecture-design-EN.md | ai-agent-design-EN.md |
+
+---
+
+## 51. 对话文档分离请求
+
+**用户**：把conversation的文档移动到docs/conversation子目录，和design子目录分开。并且文件名ai-agent-conversation缩短为conversation
+
+**Coding Agent**：已完成。
+
+最终文件结构：
+```
+docs/
+├── design/
+│   ├── ai-agent-design-CN.md
+│   └── ai-agent-design-EN.md
+└── conversation/
+│   ├── conversation-CN.md
+│   └── conversation-EN.md
+```
+
+---
+
+## 52. MCP Registry模式讨论
+
+**用户**：Harness里面，MCP的示例是否应该只是配置mcp server的registry，已经允许发行和不允许发现的mcp server，要不然只能具体配置mcp server，harness里面无法枚举所有的mcp server，handler也没有办法做标准化处理
+
+**Coding Agent**：好观点。当前设计的问题是MCP server无法枚举，Handler也无法标准化处理具体server。
+
+我来更新设计文档，改为配置MCP Registry模式。
+
+**MCP Harness Registry配置结构**：
+
+```yaml
+spec:
+  type: mcp
+  mcp:
+    registry:
+      endpoint: https://mcp-registry.example.com
+      authSecretRef: mcp-registry-token
+    allowedServers:     # 允许发现的MCP Server白名单
+      - github
+      - browser
+      - filesystem
+    deniedServers:      # 禁止发现的MCP Server黑名单
+      - dangerous-tool
+    discoveryPolicy: allowlist  # 发现策略：allowlist | denylist | all
+```
+
+**关键设计考虑**：
+- MCP Server数量庞大无法枚举
+- Harness只配置Registry而非具体Server
+- Handler标准化处理Registry连接和Server发现机制
+- 具体Server由Agent业务动态决定，通过Registry获取
+- 白名单/黑名单策略控制可用Server范围
+
+---
+
+## 53. 刷新对话文档请求
+
+**用户**：把新增加相关对话也刷新到中英文对话文档中
+
+**Coding Agent**：正在更新对话文档，添加MCP Registry模式的讨论内容。
+
 **Coding Agent**：正在创建对话记录文件。
