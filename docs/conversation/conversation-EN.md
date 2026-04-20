@@ -940,4 +940,250 @@ spec:
 
 **Coding Agent**: Updating conversation documents, adding MCP Registry mode discussion content.
 
+---
+
+## 54. agentConfig Enhancement Design Discussion Start
+
+**User**: Now consider another enhancement. Some agent frameworks need to inject information like prompt, communication protocol A2A, or agent registry for capability discovery when starting agent. How should we enhance the existing design? Let's determine step by step through interaction.
+
+**Coding Agent**: Okay, starting new design discussion. First clarify the scope of requirements.
+
+Information to inject:
+- Prompt: Agent's prompt/instruction
+- Communication protocol: e.g., A2A (Agent-to-Agent) protocol config
+- Agent Registry: for capability discovery
+
+First question: Injection timing
+
+**Option A**: Inject when AIAgent CRD created
+**Option B**: Runtime dynamic injection
+**Option C**: Both coexist
+
+---
+
+## 55. Injection Timing Decision
+
+**User**: Both coexist. Would file or configuration information delivery to handler be more appropriate? Should it be in CRD or a dedicated harness to handle this initialization and possibly update processing?
+
+**Coding Agent**: Okay, confirmed both coexist mode.
+
+Next question: Delivery method
+
+Two dimensions can be combined:
+1. File vs configuration information delivery to Handler
+2. CRD embedded vs dedicated Harness processing
+
+Expand detailed discussion of options C and D (file delivery).
+
+---
+
+## 56. File Delivery Method Discussion
+
+**User**: Expand discussion of C and D options separately
+
+**Coding Agent**: Detailed expansion of options C and D:
+
+**Option C: File delivery + AIAgent CRD embedded**
+- File content directly embedded in AIAgent CRD
+- Controller automatically creates ConfigMap to store
+- Cannot reuse, each Agent has independent configuration
+
+**Option D: File delivery + Dedicated Harness CRD**
+- AgentConfig as independent Harness type
+- AIAgent references Harness, can override partial configuration
+- Supports multiple Agents sharing configuration template
+
+Comparison summary: Option C for Agent config independent, Option D for multiple Agents sharing configuration template.
+
+---
+
+## 57. More Abstract Design Approach
+
+**User**: Still not abstract enough. Actually just define a file delivery method, specific file content format decided by Handler, so users specify related content in files per Handler format, then can pass what Handler needs to start agent to agent framework.
+
+**Coding Agent**: Understood, this is a more abstract approach, aligns with Handler pattern design philosophy.
+
+Core approach: Platform layer only defines file delivery mechanism, specific file content format decided by Handler, users provide content per Handler requirements.
+
+Next question: File source
+
+**Option A**: Directly embed file content in AIAgent CRD
+**Option B**: Reference external ConfigMap/Secret
+**Option C**: Both coexist
+
+---
+
+## 58. File Source Decision
+
+**User**: Reference external ConfigMap/Secret
+
+**Coding Agent**: Okay, confirmed using reference to external ConfigMap/Secret.
+
+Next question: Mount path specification
+
+**Option A**: Unified mount path
+**Option B**: User specifies mount path
+**Option C**: Unified path + subdirectory naming specification
+
+---
+
+## 59. Mount Path Decision
+
+**User**: Option A: Unified mount path
+
+**Coding Agent**: Okay, confirmed using unified mount path.
+
+- Unified mount path: `/etc/agent-config/`
+- Subdirectories created by reference name
+- Handler knows to read all config files from this path
+
+Next question: Runtime update mechanism
+
+**Option A**: Handler actively monitors file changes
+**Option B**: Platform notifies Handler
+**Option C**: Restart Pod
+
+---
+
+## 60. Update Mechanism Decision
+
+**User**: Option A: Handler actively monitors file changes
+
+**Coding Agent**: Okay, confirmed Handler actively monitors file changes.
+
+- Handler uses fsnotify or polling to monitor `/etc/agent-config/` directory
+- When files change, Handler reloads configuration and updates Agent
+- Handler decides update strategy itself
+
+Next question: Multiple config files priority
+
+**Option A**: Priority by reference order
+**Option B**: User explicitly specifies priority
+**Option C**: Don't handle, decided by Handler
+
+---
+
+## 61. File Conflict Handling Decision
+
+**User**: Files should have different names, config items handled by Handler. Handler theoretically avoids same names when defining config file content
+
+**Coding Agent**: Okay, confirmed.
+
+- Handler responsible for defining config file naming specification, avoid same names
+- Users prepare differently named files per Handler requirements
+- Platform layer doesn't handle file conflicts, only responsible for mounting
+
+Next question: ConfigMap/Secret declaration method
+
+**Option A**: Declare in AIAgent CRD
+**Option B**: Declare public config in AgentRuntime CRD, AIAgent can append
+**Option C**: Only declare in AIAgent, Runtime not involved
+
+---
+
+## 62. Declaration Method Decision
+
+**User**: Option B: Declare public config in AgentRuntime CRD, AIAgent can append. Because some configs are same for all agents of this type, while some are AI agent specific. Current examples are just examples.
+
+**Coding Agent**: Okay, confirmed.
+
+- AgentRuntime CRD declares public config (for all Agents of same type)
+- AIAgent CRD appends Agent-specific config
+- Similar to Harness inheritance mode
+
+Next question: Override behavior when AIAgent appends config
+
+**Option A**: AIAgent overrides Runtime config
+**Option B**: Merge mount (both mounted)
+**Option C**: User explicitly specifies override or append
+
+---
+
+## 63. Override Behavior Decision
+
+**User**: Option B: Merge mount (both mounted). Handler determines processing logic, has maximum flexibility.
+
+**Coding Agent**: Okay, confirmed.
+
+- Runtime public config mounted to `/etc/agent-config/runtime/`
+- AIAgent config mounted to `/etc/agent-config/agent/`
+- Handler decides merge logic itself, has maximum flexibility
+
+Next question: Does AgentRuntime level agentFiles also support dynamic update
+
+**Option A**: Support dynamic update
+**Option B**: Not supported, immutable after creation
+**Option C**: Supported but requires user confirmation
+
+---
+
+## 64. Runtime Dynamic Update Decision
+
+**User**: Option A: Support dynamic update. Handler decides update method.
+
+**Coding Agent**: Okay, confirmed.
+
+- AgentRuntime's agentFiles supports dynamic update
+- Handler monitors file changes and decides update method
+
+Next question: ConfigMap/Secret reference scope
+
+**Option A**: Only reference ConfigMap/Secret in same Namespace
+**Option B**: Support cross-Namespace reference
+**Option C**: Both coexist, default same Namespace, optionally specify
+
+---
+
+## 65. Reference Scope Decision
+
+**User**: Option A: Only reference ConfigMap/Secret in same Namespace. Considering multi-tenancy support, cross-Namespace reference only considered when actual use case arises.
+
+**Coding Agent**: Okay, confirmed.
+
+- Only reference ConfigMap/Secret in same Namespace
+- Aligns with multi-tenant isolation principle
+- Cross-Namespace reference considered when actual use case needs arise
+
+agentFiles design summary confirmed.
+
+---
+
+## 66. CRD Structure Example Confirmation
+
+**Coding Agent**: Provide agentFiles CRD structure example and Pod mount structure.
+
+**User**: Structure basically matches expectation. Note the difference between harness and config. Harness is external platform engineering capabilities built around AI agent, external capabilities like observability, security, traffic governance can be fine-grained processed by agent ID; while config doesn't involve platform engineering capabilities, mainly configuration information needed by AI agent/handler/framework.
+
+**Coding Agent**: Okay, this is important concept clarification.
+
+Harness vs agentFiles distinction:
+- Harness: Platform engineering capabilities, platform layer manages and provides
+- agentFiles: Business configuration, Handler decides format and usage
+
+Next question: Naming confirmation
+
+**Option A**: Keep agentFiles naming
+**Option B**: Use agentConfig naming
+**Option C**: Use other naming
+
+---
+
+## 67. Naming Decision
+
+**User**: Option B: Use agentConfig naming
+
+**Coding Agent**: Okay, confirmed. Use agentConfig naming.
+
+Provide final CRD structure example, including distinction between harness and agentConfig.
+
+agentConfig design summary confirmed.
+
+---
+
+## 68. Document Update Request
+
+**User**: Update Chinese and English design documents, especially clearly explain the different purposes and design considerations of harness and config. Also update Chinese and English conversation documents.
+
+**Coding Agent**: Updating design documents and conversation documents, adding Harness vs agentConfig concept distinction and agentConfig design chapter.
+
 **Coding Agent**: Creating conversation record files.

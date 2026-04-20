@@ -312,13 +312,46 @@ status:
 
 ---
 
-## 5. Harness Design
+## 5. Harness vs agentConfig Concept Distinction
 
-### 5.1 Object Definition
+Before diving into specific object designs, it's important to clarify the distinction between two core concepts: Harness and agentConfig.
+
+### 5.0.1 Concept Definition
+
+| Dimension | Harness | agentConfig |
+|-----------|---------|-------------|
+| **Positioning** | Platform engineering capabilities | Agent/Handler/Framework configuration information |
+| **Examples** | Observability, security, traffic governance, Sandbox isolation, MCP integration, etc. | Prompt, protocol config (A2A), skill definitions, Registry connection, etc. |
+| **Processing Method** | Platform-level processing based on Agent ID | Configuration content needed by Handler/Framework startup and runtime |
+| **Responsibility** | Platform layer manages and provides | Handler determines format and usage |
+| **Focus** | Capability externalization, standardization | Business configuration, framework-specific requirements |
+
+### 5.0.2 Design Considerations
+
+**Question**: Why distinguish Harness and agentConfig?
+
+**Decision**: Both have different responsibilities and need independent management.
+
+**Considerations**:
+
+- **Harness is Platform Engineering Capability**: These capabilities are unrelated to business logic, generic capabilities provided by the platform layer, such as security isolation, traffic governance, observability, etc. The platform layer can perform fine-grained control based on Agent ID, for example allowing/denying a specific Agent to use a specific Sandbox.
+
+- **agentConfig is Business Configuration**: These configurations are business information needed by Agent/Handler/Framework startup and runtime, such as Prompt content, communication protocol config, skill definitions, etc. The platform layer doesn't care about the specific content and format of these configurations, only responsible for the delivery mechanism.
+
+- **Decoupled Design**: Separating platform engineering capabilities from business configuration enables:
+  - Platform layer focuses on providing and managing standardized engineering capabilities
+  - Handler focuses on processing framework-specific business configuration
+  - Users can independently manage both types of content without interference
+
+---
+
+## 6. Harness Design
+
+### 6.1 Object Definition
 
 Harness is an independent CRD for AI Agent scaffolding capabilities, defining configurations for various external capabilities.
 
-#### 5.1.1 Design Considerations
+#### 6.1.1 Design Considerations
 
 **Question**: Why define capabilities as independent CRD instead of embedded configuration?
 
@@ -647,7 +680,191 @@ Harness reference ──► AIAgent/AgentRuntime use
 
 ---
 
-## 8. Design Objectives Achievement Analysis
+## 9. agentConfig Design
+
+agentConfig is the business configuration delivery mechanism needed by Agent/Handler/Framework startup and runtime, separate from Harness (platform engineering capabilities).
+
+### 9.1 Design Philosophy
+
+**Core Principle**: Platform layer only defines file delivery mechanism, Handler determines specific file content format.
+
+```
+Platform Layer Responsibilities:
+├── Define file delivery mechanism (how to deliver)
+└── Don't care about file content format
+
+Handler Responsibilities:
+├── Define configuration file format needed by its framework
+├── Parse configuration file content
+└── Use these configurations when starting Agent
+
+User Responsibilities:
+├── Prepare correctly formatted configuration files per Handler documentation
+└── Submit to platform for delivery to Handler
+```
+
+### 9.2 Configuration Declaration Method
+
+**Decision**: AgentRuntime declares public configuration (for all Agents of same type), AIAgent appends Agent-specific configuration.
+
+**Considerations**:
+- Some configurations are same for all Agents of same type (e.g., protocol config, Registry connection)
+- Some configurations are Agent-specific (e.g., Prompt content, skill definitions)
+- Public configuration managed at Runtime level reduces duplicate configuration
+
+### 9.3 File Source
+
+**Decision**: Reference external ConfigMap/Secret.
+
+**Considerations**:
+- Users pre-create ConfigMap/Secret to store configuration files
+- AIAgent and AgentRuntime reference these external resources
+- Configuration content separated from CRD, facilitates independent management and updates
+- Follows K8s conventions (ConfigMap/Secret are standard carriers for configuration)
+
+### 9.4 Mount Path Specification
+
+**Decision**: Unified mount path, sub-directories by source.
+
+```
+Pod Mount Structure:
+/etc/agent-config/
+├── runtime/                        # Runtime public configuration
+│   ├── protocol/
+│   │   └── protocol.yaml
+│   └── registry/
+│   │   └── registry.json
+└── agent/                          # Agent-specific configuration
+    ├── prompt/
+    │   └── prompt.yaml
+    └── skills/
+    │   └── skills.yaml
+```
+
+**Considerations**:
+- Handler knows to read all configuration files from `/etc/agent-config/`
+- `runtime/` and `agent/` sub-directories distinguish public and specific configuration
+- Handler decides merge logic itself, has maximum flexibility
+
+### 9.5 Update Mechanism
+
+**Decision**: Handler actively monitors file changes.
+
+**Considerations**:
+- Handler uses fsnotify or polling to monitor `/etc/agent-config/` directory
+- When files change, Handler reloads configuration and updates Agent
+- Handler decides update strategy itself (immediate effect, waiting window, etc.)
+- Platform layer doesn't intervene in update logic, reduces complexity
+
+### 9.6 File Naming
+
+**Decision**: Handler defines configuration file naming specification, avoids name conflicts.
+
+**Considerations**:
+- Handler documents what configuration files are needed and their naming
+- Users prepare differently named files per Handler requirements
+- Platform layer doesn't handle file conflicts, only responsible for mounting
+
+### 9.7 Override Behavior
+
+**Decision**: Merge mount, Handler decides merge logic.
+
+**Considerations**:
+- Runtime public configuration and AIAgent configuration both mounted to Pod
+- Handler knows which is public (`runtime/` directory) and which is specific (`agent/` directory)
+- Handler decides how to merge or override, has maximum flexibility
+
+### 9.8 Runtime Dynamic Update
+
+**Decision**: Support dynamic update, Handler decides update method.
+
+**Considerations**:
+- After AgentRuntime's agentConfig is modified, all related Agents' Pods receive updates
+- Handler monitors changes and decides how to update all Agents
+- Platform layer responsible for ConfigMap sync, Handler responsible for business logic update
+
+### 9.9 Reference Scope
+
+**Decision**: Only reference ConfigMap/Secret in same Namespace.
+
+**Considerations**:
+- Aligns with multi-tenant isolation principle
+- Cross-Namespace reference requires extra RBAC permissions, increases security risk
+- Consider extension when actual use case needs arise
+
+### 9.10 CRD Structure Example
+
+```yaml
+# AgentRuntime CRD
+apiVersion: ai.k8s.io/v1
+kind: AgentRuntime
+metadata:
+  name: runtime-001
+  namespace: tenant-a
+spec:
+  agentHandler:
+    image: adk-handler:v1.2.0
+  agentFramework:
+    image: adk-runtime:v1.2.0
+  
+  harness:                         # Platform engineering capabilities (external)
+    mcp:
+      - name: mcp-registry-default
+    sandbox:
+      - name: gvisor-sandbox
+  
+  agentConfig:                     # Public configuration (shared by all Agents)
+    - name: protocol
+      configMapRef:
+        name: protocol-config
+    - name: registry
+      secretRef:
+        name: registry-secret
+
+---
+# AIAgent CRD
+apiVersion: ai.k8s.io/v1
+kind: AIAgent
+metadata:
+  name: agent-001
+  namespace: tenant-a
+spec:
+  runtimeRef:
+    type: adk
+  
+  harnessOverride:                  # Harness capability customization (override/deny)
+    mcp:
+      - name: mcp-registry-default
+        allowedServers:
+          - github
+  
+  agentConfig:                      # Agent-specific configuration (append)
+    - name: prompt
+      configMapRef:
+        name: agent-prompt
+    - name: skills
+      configMapRef:
+        name: agent-skills
+```
+
+### 9.11 agentConfig Design Summary
+
+| Dimension | Decision |
+|-----------|----------|
+| Design Philosophy | Platform only defines delivery mechanism, Handler determines content format |
+| Naming | agentConfig |
+| File Source | Reference external ConfigMap/Secret |
+| Declaration Method | Runtime declares public config, AIAgent appends specific config |
+| Mount Path | `/etc/agent-config/runtime/` and `/etc/agent-config/agent/` |
+| Update Mechanism | Handler actively monitors file changes |
+| File Naming | Handler defines specification, avoid same names |
+| Override Behavior | Merge mount, Handler decides merge logic |
+| Runtime Dynamic Update | Supported, Handler decides update method |
+| Reference Scope | Same Namespace, no cross-Namespace |
+
+---
+
+## 10. Design Objectives Achievement Analysis
 
 ### 8.1 Framework Independence
 
@@ -696,14 +913,15 @@ Harness reference ──► AIAgent/AgentRuntime use
 
 ---
 
-## 9. Summary
+## 11. Summary
 
-This design achieves the core resource definition for AI Agent in Kubernetes through three-layer object abstraction (AIAgent, AgentRuntime, Harness). Core innovations include:
+This design achieves the core resource definition for AI Agent in Kubernetes through multi-layer object abstraction (AIAgent, AgentRuntime, Harness, agentConfig). Core innovations include:
 
 1. **Agent Handler Pattern**: Platform layer Controller uniformly abstracts, framework layer Agent Handler specifically adapts, decouples development responsibilities
 2. **Agent and Runtime Separation**: Supports dynamic scheduling and migration, analogous to Pod and Node
 3. **Flexible Process Mapping Modes**: Supports single process multiple Agents and multiple processes single Agent modes, decided by Agent Handler
-4. **Harness Standardization**: External capabilities managed independently, inheritance + override mode customization
-5. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
+4. **Harness Standardization**: Platform engineering capabilities externalized, inheritance + override mode customization
+5. **agentConfig Abstraction**: Business configuration separated from platform capabilities, Handler determines format, platform provides delivery mechanism
+6. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
 
 Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios, while maintaining security isolation and multi-tenancy capabilities.

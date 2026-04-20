@@ -940,4 +940,250 @@ spec:
 
 **Coding Agent**：正在更新对话文档，添加MCP Registry模式的讨论内容。
 
+---
+
+## 54. agentConfig增强设计讨论启动
+
+**用户**：现在考虑另外一项增强，就是有一些agent框架在启动agent的时候，需要注入诸如prompt等信息，通信协议a2a，或者agent registry用于能力发现等，这些agent定制化的信息。应该如何增强现有的设计，一步一步交互确定
+
+**Coding Agent**：好，开始新的设计讨论。先理解清楚需求范围。
+
+需要注入的定制化信息：
+- Prompt：Agent的提示词/指令
+- 通信协议：如A2A（Agent-to-Agent）协议配置
+- Agent Registry：用于能力发现
+
+第一个问题：注入时机
+
+**选项A**：AIAgent CRD创建时注入
+**选项B**：运行时动态注入
+**选项C**：两者并存
+
+---
+
+## 55. 注入时机决策
+
+**用户**：两者并存，这种注入信息采用文件还是配置信息传递给handler会比较合适，是在crd还是专门一个harness来处理这种初始化和或许可能更新的处理
+
+**Coding Agent**：好，确定两者并存模式。
+
+下一个问题：传递方式
+
+两个维度可以组合：
+1. 文件 vs 配置信息传递给Handler
+2. CRD内嵌 vs 专门Harness处理
+
+展开方案C和D（文件传递）的详细讨论。
+
+---
+
+## 56. 文件传递方案讨论
+
+**用户**：C和D方案分别展开讨论一下
+
+**Coding Agent**：详细展开方案C和D：
+
+**方案C：文件传递 + AIAgent CRD内嵌**
+- AIAgent CRD中直接嵌入文件内容
+- Controller自动创建ConfigMap存储
+- 无法复用，每个Agent独立配置
+
+**方案D：文件传递 + 专门Harness CRD**
+- AgentConfig作为独立Harness类型
+- AIAgent引用Harness，可覆盖部分配置
+- 支持多Agent共享配置模板
+
+对比总结：方案C适用于Agent配置独立，方案D适用于多Agent共享配置模板。
+
+---
+
+## 57. 更抽象的设计思路
+
+**用户**：还是不够抽象，实际上只要定义一个文件传递的方式，具体文件内容由handler决定格式，这样用户根据handler的格式指定相关内容在文件里面，即可把handler启动agent需要的内容传递给agent框架
+
+**Coding Agent**：理解了，这是更抽象的思路，符合Handler模式的设计理念。
+
+核心思路：平台层只定义文件传递机制，具体文件内容由Handler决定格式，用户按照Handler要求提供内容。
+
+下一个问题：文件来源
+
+**选项A**：AIAgent CRD中直接嵌入文件内容
+**选项B**：引用外部ConfigMap/Secret
+**选项C**：两者并存
+
+---
+
+## 58. 文件来源决策
+
+**用户**：引用外部ConfigMap/Secret
+
+**Coding Agent**：好，确定采用引用外部ConfigMap/Secret方式。
+
+下一个问题：挂载路径规范
+
+**选项A**：统一挂载路径
+**选项B**：用户指定挂载路径
+**选项C**：统一路径 + 子目录命名规范
+
+---
+
+## 59. 挂载路径决策
+
+**用户**：选项A：统一挂载路径
+
+**Coding Agent**：好，确定采用统一挂载路径。
+
+- 统一挂载路径：`/etc/agent-config/`
+- 子目录按引用name创建
+- Handler知道去这个路径读取所有配置文件
+
+下一个问题：运行时更新机制
+
+**选项A**：Handler主动监听文件变更
+**选项B**：平台通知Handler
+**选项C**：重启Pod
+
+---
+
+## 60. 更新机制决策
+
+**用户**：选项A：Handler主动监听文件变更
+
+**Coding Agent**：好，确定采用Handler主动监听文件变更。
+
+- Handler使用fsnotify或轮询监听`/etc/agent-config/`目录
+- 文件变更时，Handler重新加载配置并更新Agent
+- Handler自行决定更新策略
+
+下一个问题：多配置文件的优先级
+
+**选项A**：按引用顺序优先
+**选项B**：用户显式指定优先级
+**选项C**：不处理，由Handler决定
+
+---
+
+## 61. 文件冲突处理决策
+
+**用户**：文件应该做到不同名，配置项由handler处理，理论上handler定义这些配置文件内容时候，避免同名
+
+**Coding Agent**：好，确定。
+
+- Handler负责定义配置文件的命名规范，避免同名
+- 用户按Handler要求准备不同名称的文件
+- 平台层不处理文件冲突，只负责挂载
+
+下一个问题：ConfigMap/Secret的声明方式
+
+**选项A**：在AIAgent CRD中声明
+**选项B**：在AgentRuntime CRD中声明公共配置，AIAgent可追加
+**选项C**：只在AIAgent中声明，Runtime不涉及
+
+---
+
+## 62. 声明方式决策
+
+**用户**：选项B：在AgentRuntime CRD中声明公共配置，AIAgent可追加。因为有些配置是针对所有这类agent是一样的，还有一些配置是AI agent特有的。现在给的只是示例
+
+**Coding Agent**：好，确定。
+
+- AgentRuntime CRD声明公共配置（针对所有同类Agent）
+- AIAgent CRD追加Agent专属配置
+- 类似Harness的继承模式
+
+下一个问题：AIAgent追加配置时的覆盖行为
+
+**选项A**：AIAgent覆盖Runtime配置
+**选项B**：合并挂载（两者都挂载）
+**选项C**：用户显式指定覆盖或追加
+
+---
+
+## 63. 覆盖行为决策
+
+**用户**：选项B：合并挂载（两者都挂载）。由handler确定处理逻辑，具有最大的灵活性
+
+**Coding Agent**：好，确定。
+
+- Runtime公共配置挂载到`/etc/agent-config/runtime/`
+- AIAgent配置挂载到`/etc/agent-config/agent/`
+- Handler自行决定合并逻辑，具有最大灵活性
+
+下一个问题：AgentRuntime级别的agentFiles是否也支持动态更新
+
+**选项A**：支持动态更新
+**选项B**：不支持，创建后不可变
+**选项C**：支持但需要用户确认
+
+---
+
+## 64. Runtime动态更新决策
+
+**用户**：选项A：支持动态更新。由handler决定更新的方式
+
+**Coding Agent**：好，确定。
+
+- AgentRuntime的agentFiles支持动态更新
+- Handler监听文件变更并决定更新方式
+
+下一个问题：ConfigMap/Secret的引用范围
+
+**选项A**：只能引用同Namespace的ConfigMap/Secret
+**选项B**：支持跨Namespace引用
+**选项C**：两者并存，默认同Namespace，可选指定
+
+---
+
+## 65. 引用范围决策
+
+**用户**：选项A：只能引用同Namespace的ConfigMap/Secret。考虑多租户支持，跨namespace引用，只有等实际有用例的时候再考虑
+
+**Coding Agent**：好，确定。
+
+- 只能引用同Namespace的ConfigMap/Secret
+- 符合多租户隔离原则
+- 跨Namespace引用待实际用例需求时再考虑
+
+agentFiles设计汇总确认。
+
+---
+
+## 66. CRD结构示例确认
+
+**Coding Agent**：给出agentFiles的CRD结构示例和Pod挂载结构。
+
+**用户**：结构基本符合预期，注意harness和配置的区别。harness是围绕ai agent可以构筑的外置平台工程能力，外置能力比如可观察性，安全，流量治理等可以根据agent id，进行细粒度的处理；而配置是不涉及平台工程能力，主要是ai agent/handler/framework需要的配置信息
+
+**Coding Agent**：好，这是重要的概念澄清。
+
+Harness vs agentFiles区分：
+- Harness：平台工程能力，平台层负责管理和提供
+- agentFiles：业务配置，Handler决定格式和用途
+
+下一个问题：命名确认
+
+**选项A**：保持agentFiles命名
+**选项B**：使用agentConfig命名
+**选项C**：使用其他命名
+
+---
+
+## 67. 命名决策
+
+**用户**：选项B：使用agentConfig命名
+
+**Coding Agent**：好，确定。使用agentConfig命名。
+
+给出最终CRD结构示例，包含harness和agentConfig的区分。
+
+agentConfig设计汇总确认。
+
+---
+
+## 68. 文档更新请求
+
+**用户**：更新中英文设计文档，特别是把harness和config的不同目的和设计考量要写清楚。同时把中英文的conversation文档也更新
+
+**Coding Agent**：正在更新设计文档和对话文档，添加Harness与agentConfig的概念区分和agentConfig设计章节。
+
 **Coding Agent**：正在创建对话记录文件。

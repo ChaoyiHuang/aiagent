@@ -312,13 +312,46 @@ status:
 
 ---
 
-## 5. Harness设计
+## 5. Harness与agentConfig的概念区分
 
-### 5.1 对象定义
+在深入设计具体对象之前，需要明确两个核心概念的区分：Harness和agentConfig。
+
+### 5.0.1 概念定义
+
+| 维度 | Harness | agentConfig |
+|------|---------|-------------|
+| **定位** | 平台工程能力 | Agent/Handler/Framework配置信息 |
+| **示例** | 可观察性、安全、流量治理、Sandbox隔离、MCP接入等 | Prompt、协议配置（A2A）、技能定义、Registry连接等 |
+| **处理方式** | 根据Agent ID进行细粒度的平台级处理 | Handler/Framework启动和运行需要的配置内容 |
+| **责任方** | 平台层负责管理和提供 | Handler决定格式和用途 |
+| **关注点** | 能力外置化、标准化 | 业务配置、框架特定需求 |
+
+### 5.0.2 设计考虑
+
+**问题**：为什么需要区分Harness和agentConfig？
+
+**决策**：两者职责不同，需要独立管理。
+
+**考虑因素**：
+
+- **Harness是平台工程能力**：这些能力与业务逻辑无关，是平台层提供的通用能力，如安全隔离、流量治理、可观察性等。平台层可以根据Agent ID进行细粒度的控制，例如允许/禁止某个Agent使用某个Sandbox。
+
+- **agentConfig是业务配置**：这些配置是Agent/Handler/Framework启动和运行所需的业务信息，如Prompt内容、通信协议配置、技能定义等。平台层不关心这些配置的具体内容和格式，只负责传递机制。
+
+- **解耦设计**：将平台工程能力与业务配置分离，使得：
+  - 平台层专注于提供和管理标准化的工程能力
+  - Handler专注于处理框架特定的业务配置
+  - 用户可以独立管理两类内容，互不干扰
+
+---
+
+## 6. Harness设计
+
+### 6.1 对象定义
 
 Harness是AI Agent脚手架能力的独立CRD，定义各种外置能力的配置。
 
-#### 5.1.1 设计考虑
+#### 6.1.1 设计考虑
 
 **问题**：为什么将能力定义为独立CRD而非内嵌配置？
 
@@ -663,7 +696,191 @@ Harness引用 ──► AIAgent/AgentRuntime使用
 
 ---
 
-## 8. 设计目标达成分析
+## 9. agentConfig设计
+
+agentConfig是Agent/Handler/Framework启动和运行所需的业务配置传递机制，与Harness（平台工程能力）职责分离。
+
+### 9.1 设计理念
+
+**核心原则**：平台层只定义文件传递机制，具体文件内容由Handler决定格式。
+
+```
+平台层职责：
+├── 定义文件传递机制（如何传递）
+└── 不关心文件内容格式
+
+Handler职责：
+├── 定义自己框架需要的配置文件格式
+├── 解析配置文件内容
+└── 启动Agent时使用这些配置
+
+用户职责：
+├── 根据Handler文档，准备正确格式的配置文件
+└── 提交给平台传递给Handler
+```
+
+### 9.2 配置声明方式
+
+**决策**：AgentRuntime声明公共配置（针对所有同类Agent），AIAgent追加Agent专属配置。
+
+**考虑因素**：
+- 有些配置对所有同类Agent是一样的（如协议配置、Registry连接）
+- 有些配置是Agent特有的（如Prompt内容、技能定义）
+- 公共配置在Runtime级别管理，减少重复配置
+
+### 9.3 文件来源
+
+**决策**：引用外部ConfigMap/Secret。
+
+**考虑因素**：
+- 用户预先创建ConfigMap/Secret存放配置文件
+- AIAgent和AgentRuntime引用这些外部资源
+- 配置内容与CRD分离，便于独立管理和更新
+- 遵循K8s惯例（ConfigMap/Secret是配置的标准载体）
+
+### 9.4 挂载路径规范
+
+**决策**：统一挂载路径，按来源分子目录。
+
+```
+Pod挂载结构：
+/etc/agent-config/
+├── runtime/                        # Runtime公共配置
+│   ├── protocol/
+│   │   └── protocol.yaml
+│   └── registry/
+│   │   └── registry.json
+└── agent/                          # Agent专属配置
+    ├── prompt/
+    │   └── prompt.yaml
+    └── skills/
+    │   └── skills.yaml
+```
+
+**考虑因素**：
+- Handler知道去`/etc/agent-config/`读取所有配置文件
+- `runtime/`和`agent/`子目录区分公共配置和专属配置
+- Handler自行决定合并逻辑，具有最大灵活性
+
+### 9.5 更新机制
+
+**决策**：Handler主动监听文件变更。
+
+**考虑因素**：
+- Handler使用fsnotify或轮询监听`/etc/agent-config/`目录
+- 文件变更时，Handler重新加载配置并更新Agent
+- Handler自行决定更新策略（立即生效、等待窗口等）
+- 平台层不介入更新逻辑，降低复杂度
+
+### 9.6 文件命名
+
+**决策**：Handler定义配置文件命名规范，避免同名冲突。
+
+**考虑因素**：
+- Handler在文档中说明需要哪些配置文件及其命名
+- 用户按Handler要求准备不同名称的文件
+- 平台层不处理文件冲突，只负责挂载
+
+### 9.7 覆盖行为
+
+**决策**：合并挂载，Handler决定合并逻辑。
+
+**考虑因素**：
+- Runtime公共配置和AIAgent配置都挂载到Pod
+- Handler知道哪些是公共配置（`runtime/`目录），哪些是专属配置（`agent/`目录）
+- Handler自行决定如何合并或覆盖，具有最大灵活性
+
+### 9.8 Runtime动态更新
+
+**决策**：支持动态更新，Handler决定更新方式。
+
+**考虑因素**：
+- AgentRuntime的agentConfig修改后，所有相关Agent的Pod都会收到更新
+- Handler监听变更并决定如何更新所有Agent
+- 平台层负责ConfigMap同步，Handler负责业务逻辑更新
+
+### 9.9 引用范围
+
+**决策**：只能引用同Namespace的ConfigMap/Secret。
+
+**考虑因素**：
+- 符合多租户隔离原则
+- 跨Namespace引用需要额外RBAC权限，增加安全风险
+- 实际用例需要时再考虑扩展
+
+### 9.10 CRD结构示例
+
+```yaml
+# AgentRuntime CRD
+apiVersion: ai.k8s.io/v1
+kind: AgentRuntime
+metadata:
+  name: runtime-001
+  namespace: tenant-a
+spec:
+  agentHandler:
+    image: adk-handler:v1.2.0
+  agentFramework:
+    image: adk-runtime:v1.2.0
+  
+  harness:                         # 平台工程能力（外置）
+    mcp:
+      - name: mcp-registry-default
+    sandbox:
+      - name: gvisor-sandbox
+  
+  agentConfig:                     # 公共配置（所有Agent共享）
+    - name: protocol
+      configMapRef:
+        name: protocol-config
+    - name: registry
+      secretRef:
+        name: registry-secret
+
+---
+# AIAgent CRD
+apiVersion: ai.k8s.io/v1
+kind: AIAgent
+metadata:
+  name: agent-001
+  namespace: tenant-a
+spec:
+  runtimeRef:
+    type: adk
+  
+  harnessOverride:                  # Harness能力定制化（覆盖/禁止）
+    mcp:
+      - name: mcp-registry-default
+        allowedServers:
+          - github
+  
+  agentConfig:                      # Agent专属配置（追加）
+    - name: prompt
+      configMapRef:
+        name: agent-prompt
+    - name: skills
+      configMapRef:
+        name: agent-skills
+```
+
+### 9.11 agentConfig设计汇总
+
+| 维度 | 决策 |
+|------|------|
+| 设计理念 | 平台只定义传递机制，Handler决定内容格式 |
+| 命名 | agentConfig |
+| 文件来源 | 引用外部ConfigMap/Secret |
+| 声明方式 | Runtime声明公共配置，AIAgent追加专属配置 |
+| 挂载路径 | `/etc/agent-config/runtime/`和`/etc/agent-config/agent/` |
+| 更新机制 | Handler主动监听文件变更 |
+| 文件命名 | Handler定义规范，避免同名 |
+| 覆盖行为 | 合并挂载，Handler决定合并逻辑 |
+| Runtime动态更新 | 支持，Handler决定更新方式 |
+| 引用范围 | 同Namespace，不跨Namespace |
+
+---
+
+## 10. 设计目标达成分析
 
 ### 8.1 框架无关性
 
@@ -712,14 +929,15 @@ Harness引用 ──► AIAgent/AgentRuntime使用
 
 ---
 
-## 9. 总结
+## 11. 总结
 
-本设计通过三层对象抽象（AIAgent、AgentRuntime、Harness），实现了AI Agent在Kubernetes中的核心资源定义。核心创新点包括：
+本设计通过多层对象抽象（AIAgent、AgentRuntime、Harness、agentConfig），实现了AI Agent在Kubernetes中的核心资源定义。核心创新点包括：
 
 1. **Agent Handler模式**：平台层Controller统一抽象，框架层Agent Handler具体适配，解耦开发职责
 2. **Agent与Runtime分离**：支持动态调度和迁移，类比Pod与Node
 3. **灵活的进程映射模式**：支持单进程多Agent和多进程单Agent两种模式，由Agent Handler自行决定
-4. **Harness标准化**：外置能力独立管理，继承+覆盖模式定制
-5. **Sandbox集成**：复用agent-sandbox项目，支持多种执行环境形态
+4. **Harness标准化**：平台工程能力外置化管理，继承+覆盖模式定制
+5. **agentConfig抽象**：业务配置与平台能力分离，Handler决定格式，平台提供传递机制
+6. **Sandbox集成**：复用agent-sandbox项目，支持多种执行环境形态
 
 通过本设计，AI Agent成为Kubernetes中的一等公民，类似Pod的核心抽象，能够适配任何Agent框架，支持复杂业务场景，同时保持安全隔离和多租户能力。
