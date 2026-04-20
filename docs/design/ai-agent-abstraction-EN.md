@@ -1,4 +1,4 @@
-# AI Agent Architecture Design Document
+# AI Agent abstraction in Kubernetes
 
 ## 1. Overview
 
