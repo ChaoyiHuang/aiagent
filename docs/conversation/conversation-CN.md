@@ -1187,3 +1187,207 @@ agentConfig设计汇总确认。
 **Coding Agent**：正在更新设计文档和对话文档，添加Harness与agentConfig的概念区分和agentConfig设计章节。
 
 **Coding Agent**：正在创建对话记录文件。
+
+---
+
+## 69. 章节结构调整请求
+
+**用户**：7. Sandbox集成设计 合并到AgentRuntime设计，作为agent runtime的一个小节。agentConfig设计合并到AI Agent的设计里面，作为AIAgent设计的一个小节。章节Harness与agentConfig的概念区分以及章节Harness配置传递机制，都作为Harness设计的下面的小节，注意逻辑顺序。
+
+**Coding Agent**：好的，我来调整章节结构：
+- Sandbox集成设计作为AgentRuntime设计的3.4小节
+- agentConfig设计作为AIAgent设计的4.6小节
+- Harness与agentConfig概念区分作为Harness设计的5.1小节
+- Harness配置传递机制作为Harness设计的5.8小节
+
+同时需要调整后续章节编号和CRD示例中的agentConfig字段。
+
+---
+
+## 70. 删除类比关系表格
+
+**用户**：把中英文的这一节去掉：**Analogy Relationship**:
+
+**Coding Agent**：已从中英文文档中删除类比关系表格。
+
+---
+
+## 71. Agent Framework运行模式设计请求
+
+**用户**：AgentRuntime Design增加支持 agent framework的几种运行模式，long running服务，事件触发按需运行，对外表现server模式(监听端口)和client模式(类似聊天软件的客户端，比如OpenClaw，WeChat的weixin-claw)
+
+**Coding Agent**：好的，我来在AgentRuntime Design章节中增加Agent Framework运行模式：
+
+#### 生命周期模式
+- Long Running：长期运行的服务，持续提供服务能力
+- Event-triggered：事件触发按需运行，完成任务后终止
+
+#### 通信模式
+- Server模式：监听端口，对外提供服务
+- Client模式：主动连接外部服务，类似聊天客户端
+
+同时调整后续章节编号：
+- 3.3 Pod容器配置 → 3.4 Pod容器配置
+- 3.4 Sandbox集成设计 → 3.5 Sandbox集成设计
+- 3.5 CRD结构示例 → 3.6 CRD结构示例
+
+---
+
+## 72. 更新Client模式示例图示
+
+**用户**：Client模式示例应该修改成：
+```
+AgentRuntime Pod
+│
+└── Agent Framework
+    └── AIAgent (OpenClaw / weixin-claw) ──► 连接外部平台服务
+                                              │
+                                              ▼
+                                        WhatsApp / Discord / WeChat...
+```
+
+**Coding Agent**：已修改完成。Client模式示例图示已更新：
+- AIAgent标注为具体框架类型（OpenClaw / weixin-claw）
+- 连接目标改为WhatsApp / Discord / WeChat等聊天平台
+
+---
+
+## 73. 对话记录更新请求
+
+**用户**：把对话记录更新到conversation相应文件
+
+**Coding Agent**：正在更新对话记录文件，追加本次对话内容。
+
+---
+
+## 74. 资源效率考虑章节请求
+
+**用户**：在AgentRuntime中增加一节关于资源效率的考虑，对于很多AIAgent来说，平常非常空闲，只有任务来了的时候忙，有的AIAgent是短任务运行，有的是长任务运行，因此通过轻量级的agenthandler，以各种方式运行agent framework，在多ai agent中共用一个pod的资源进行资源共享，提升资源利用效率。
+
+**Coding Agent**：好的，我来在AgentRuntime Design章节中增加资源效率考虑小节（3.4），包括：
+
+#### 资源使用特征
+- 空闲时间长：Agent大部分时间处于空闲状态
+- 任务突发性：任务到来时资源使用突增
+- 任务时长差异：短任务和长任务并存
+- 资源需求波动：不同任务资源需求差异大
+
+#### 资源共享策略
+- 多Agent共享Pod资源：空闲Agent共享基础设施开销
+- 按任务类型分组：短任务组、长任务组、混合组
+
+#### 资源效率量化分析
+对比传统模式与共享模式的效率差异，共享模式资源利用率可达60%~80%
+
+#### 设计要点
+- 轻量级Agent Handler
+- Framework进程共享
+- 动态资源调度
+- Pod级别资源配额
+
+同时调整后续章节编号：
+- 3.4 Pod容器配置 → 3.5 Pod容器配置
+- 3.5 Sandbox集成设计 → 3.6 Sandbox集成设计
+- 3.6 CRD结构示例 → 3.7 CRD结构示例
+
+---
+
+## 75. 修改资源效率章节
+
+**用户**：#### 3.4.3 资源效率量化分析 删除，然后另外要考虑单Agent Framework 多 AI Agent和 每个Agent Framework一个AI Agent，但是通过多Agent Framework多进程实现多agent这两种一个AgentRuntime支持多AI agent模式可以提高资源利用效率。
+
+**Coding Agent**：好的，我来修改：
+
+1. 删除 3.4.3 资源效率量化分析章节
+2. 修改 3.4.2 资源共享策略，改为两种AgentRuntime支持多AI Agent的模式：
+
+**模式一：单Agent Framework多AI Agent**
+- 一个Agent Framework进程承载多个AI Agent
+- 进程级别资源共享：内存、网络连接、运行时环境
+- Framework内部实现Agent调度和资源分配
+
+**模式二：多Agent Framework进程多AI Agent**
+- 每个Agent Framework进程对应一个AI Agent
+- 通过多进程实现多Agent，共享Pod基础设施和资源配额
+- 进程级隔离，单Agent故障不影响其他Agent
+
+增加对比分析表，说明两种模式在进程数量、资源共享粒度、隔离强度、资源效率等方面的差异。
+
+---
+
+## 76. 修改描述
+
+**用户**：把这句话改一下：Agent框架原生支持多Agent（如CrewAI、ADK多Agent） -> Agent框架原生支持单进程多Agent
+
+**Coding Agent**：已修改完成。
+
+---
+
+## 77. 删除描述
+
+**用户**：这句话删除：Agent之间协作紧密，需要共享上下文
+
+**Coding Agent**：已删除。中英文文档都已移除这句话。
+
+---
+
+## 78. 增加模型作为平台服务能力
+
+**用户**：在Harness中增加模型作为平台服务能力
+
+**Coding Agent**：已在Harness设计中增加model类型：
+
+**标准类型列表新增**：
+- model：模型服务，LLM模型接入配置
+
+**Model类型Spec结构**：
+```yaml
+spec:
+  type: model
+  model:
+    provider: openai          # 模型提供商
+    endpoint: https://api.openai.com/v1
+    authSecretRef: openai-api-key
+    models:                   # 可用模型列表
+      - name: gpt-4
+        allowed: true
+        rateLimit: 100
+      - name: gpt-3.5-turbo
+        allowed: true
+      - name: o1-preview
+        allowed: false
+    defaultModel: gpt-4
+```
+
+**考虑因素**：
+- 模型服务是Agent核心依赖，需要统一配置管理
+- 平台层提供模型接入能力，Handler无需处理不同提供商细节
+- 支持多模型配置和访问控制
+- 认证信息通过Secret管理
+
+同时更新了：
+- AgentRuntime CRD示例中添加model harness引用
+- Harness CRD示例中添加model类型示例
+- 章节编号调整（5.3.1 Model类型设计，5.3.2 MCP类型，5.3.3其他类型）
+
+---
+
+## 79. 删除注释并改用开源模型示例
+
+**用户**：删除这个注释 # Model provider: openai | anthropic | azure | local | custom，另外模型使用开源模型为例子，比如deepseek, qwen
+
+**Coding Agent**：已完成修改：
+
+1. **删除注释**：移除了provider字段的注释说明
+
+2. **改用开源模型示例**：
+   - provider: deepseek
+   - endpoint: https://api.deepseek.com/v1
+   - models: deepseek-chat, deepseek-coder, qwen-turbo, qwen-max
+   - defaultModel: deepseek-chat
+
+3. **更新所有相关位置**：
+   - Spec结构示例（5.3.1章节）
+   - Harness CRD示例（5.9章节）
+   - AgentRuntime harness引用
+   - metadata.name: model-openai-default → model-deepseek-default

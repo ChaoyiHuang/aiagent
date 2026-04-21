@@ -1187,3 +1187,207 @@ agentConfig design summary confirmed.
 **Coding Agent**: Updating design documents and conversation documents, adding Harness vs agentConfig concept distinction and agentConfig design chapter.
 
 **Coding Agent**: Creating conversation record files.
+
+---
+
+## 69. Chapter Structure Adjustment Request
+
+**User**: Merge Sandbox Integration Design into AgentRuntime Design as a subsection of Agent Runtime. Merge agentConfig Design into AI Agent Design as a subsection of AIAgent Design. Chapters Harness vs agentConfig Concept Distinction and Harness Configuration Delivery Mechanism should both be subsections under Harness Design, pay attention to logical order.
+
+**Coding Agent**: Okay, I'll adjust the chapter structure:
+- Sandbox Integration Design as subsection 3.4 in AgentRuntime Design
+- agentConfig Design as subsection 4.6 in AIAgent Design
+- Harness vs agentConfig Concept Distinction as subsection 5.1 in Harness Design
+- Harness Configuration Delivery Mechanism as subsection 5.8 in Harness Design
+
+Also need to adjust subsequent chapter numbers and agentConfig fields in CRD examples.
+
+---
+
+## 70. Remove Analogy Relationship Table
+
+**User**: Remove the Analogy Relationship section from both Chinese and English documents
+
+**Coding Agent**: Analogy Relationship table removed from both Chinese and English documents.
+
+---
+
+## 71. Agent Framework Running Modes Design Request
+
+**User**: AgentRuntime Design should add support for several running modes of agent framework: long running service, event-triggered on-demand execution, external presentation as server mode (listening on port) and client mode (similar to chat software client, like OpenClaw, WeChat's weixin-claw)
+
+**Coding Agent**: Okay, I'll add Agent Framework Running Modes in AgentRuntime Design section:
+
+#### Lifecycle Modes
+- Long Running: Long-running service, continuously providing service capabilities
+- Event-triggered: Event-triggered on-demand execution, terminates after task completion
+
+#### Communication Modes
+- Server Mode: Listening on port, providing services externally
+- Client Mode: Actively connects to external services, similar to chat client
+
+Also adjust subsequent chapter numbers:
+- 3.3 Pod Container Configuration → 3.4 Pod Container Configuration
+- 3.4 Sandbox Integration Design → 3.5 Sandbox Integration Design
+- 3.5 CRD Structure Example → 3.6 CRD Structure Example
+
+---
+
+## 72. Update Client Mode Example Diagram
+
+**User**: Client mode example should be modified to:
+```
+AgentRuntime Pod
+│
+└── Agent Framework
+    └── AIAgent (OpenClaw / weixin-claw) ──► Connects to external platform service
+                                              │
+                                              ▼
+                                        WhatsApp / Discord / WeChat...
+```
+
+**Coding Agent**: Modification completed. Client mode example diagram updated:
+- AIAgent labeled with specific framework type (OpenClaw / weixin-claw)
+- Connection target changed to WhatsApp / Discord / WeChat chat platforms
+
+---
+
+## 73. Conversation Record Update Request
+
+**User**: Update conversation records to corresponding conversation files
+
+**Coding Agent**: Updating conversation record files, appending current conversation content.
+
+---
+
+## 74. Resource Efficiency Considerations Section Request
+
+**User**: Add a section about resource efficiency considerations in AgentRuntime. For many AIAgents, they are mostly idle, only busy when tasks arrive. Some AIAgents run short tasks, some run long tasks. Through lightweight agent handler, running agent framework in various ways, multiple AI Agents share one Pod's resources for resource sharing, improving resource utilization efficiency.
+
+**Coding Agent**: Okay, I'll add Resource Efficiency Considerations section (3.4) in AgentRuntime Design, including:
+
+#### Resource Usage Characteristics
+- Long idle time: Agent mostly idle
+- Task burstiness: Resource usage spikes when task arrives
+- Task duration variance: Short and long tasks coexist
+- Resource demand fluctuation: Varying demands across tasks
+
+#### Resource Sharing Strategies
+- Multi-Agent shared Pod resources: Idle Agents share infrastructure overhead
+- Group by task type: Short task group, long task group, mixed group
+
+#### Resource Efficiency Quantitative Analysis
+Comparing traditional mode with shared mode, shared mode achieves 60%~80% utilization
+
+#### Design Points
+- Lightweight Agent Handler
+- Framework process sharing
+- Dynamic resource scheduling
+- Pod-level resource quota
+
+Also adjust subsequent chapter numbers:
+- 3.4 Pod Container Configuration → 3.5 Pod Container Configuration
+- 3.5 Sandbox Integration Design → 3.6 Sandbox Integration Design
+- 3.6 CRD Structure Example → 3.7 CRD Structure Example
+
+---
+
+## 75. Modify Resource Efficiency Section
+
+**User**: Delete #### 3.4.3 Resource Efficiency Quantitative Analysis, and consider two modes that AgentRuntime supports for multi-AI Agent to improve resource efficiency: Single Agent Framework Multiple AI Agents, and each Agent Framework one AI Agent but through multi-Agent Framework multi-process to implement multi-Agent.
+
+**Coding Agent**: Okay, I'll modify:
+
+1. Delete 3.4.3 Resource Efficiency Quantitative Analysis section
+2. Modify 3.4.2 Resource Sharing Strategies to two AgentRuntime supported multi-AI Agent modes:
+
+**Mode 1: Single Agent Framework Multiple AI Agents**
+- One Agent Framework process hosts multiple AI Agents
+- Process-level resource sharing: memory, network connections, runtime environment
+- Framework internally implements Agent scheduling and resource allocation
+
+**Mode 2: Multi Agent Framework Processes Multiple AI Agents**
+- Each Agent Framework process corresponds to one AI Agent
+- Multi-Agent through multi-process, shared Pod infrastructure and resource quota
+- Process-level isolation, single Agent failure doesn't affect other Agents
+
+Add comparison analysis table showing differences in process count, resource sharing granularity, isolation strength, resource efficiency between the two modes.
+
+---
+
+## 76. Modify Description
+
+**User**: Change this sentence: Agent framework natively supports multi-Agent (e.g., CrewAI, ADK multi-Agent) -> Agent framework natively supports single-process multi-Agent
+
+**Coding Agent**: Modification completed.
+
+---
+
+## 77. Delete Description
+
+**User**: Delete this sentence: Tight Agent collaboration, need shared context
+
+**Coding Agent**: Deleted. Both Chinese and English documents removed this sentence.
+
+---
+
+## 78. Add Model as Platform Service Capability
+
+**User**: Add model as platform service capability in Harness
+
+**Coding Agent**: Added model type in Harness design:
+
+**Standard Type List Addition**:
+- model: Model service, LLM model integration configuration
+
+**Model Type Spec Structure**:
+```yaml
+spec:
+  type: model
+  model:
+    provider: openai          # Model provider
+    endpoint: https://api.openai.com/v1
+    authSecretRef: openai-api-key
+    models:                   # Available model list
+      - name: gpt-4
+        allowed: true
+        rateLimit: 100
+      - name: gpt-3.5-turbo
+        allowed: true
+      - name: o1-preview
+        allowed: false
+    defaultModel: gpt-4
+```
+
+**Considerations**:
+- Model service is Agent's core dependency, needs unified configuration management
+- Platform layer provides model integration capability, Handler doesn't handle different provider details
+- Multi-model configuration and access control supported
+- Authentication info managed through Secret
+
+Also updated:
+- AgentRuntime CRD example added model harness reference
+- Harness CRD example added model type example
+- Chapter numbering adjusted (5.3.1 Model Type Design, 5.3.2 MCP Type, 5.3.3 Other Types)
+
+---
+
+## 79. Delete Comment and Use Open Source Model Example
+
+**User**: Delete this comment # Model provider: openai | anthropic | azure | local | custom, and use open source model as example, like deepseek, qwen
+
+**Coding Agent**: Modification completed:
+
+1. **Delete comment**: Removed provider field comment explanation
+
+2. **Use open source model example**:
+   - provider: deepseek
+   - endpoint: https://api.deepseek.com/v1
+   - models: deepseek-chat, deepseek-coder, qwen-turbo, qwen-max
+   - defaultModel: deepseek-chat
+
+3. **Updated all related locations**:
+   - Spec structure example (5.3.1 section)
+   - Harness CRD example (5.9 section)
+   - AgentRuntime harness reference
+   - metadata.name: model-openai-default → model-deepseek-default
