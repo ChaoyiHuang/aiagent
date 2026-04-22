@@ -658,7 +658,7 @@ status:
 
 ---
 
-## 5. Harness设计
+## 5. Harness设计（WIP and TBD）
 
 Harness是AI Agent脚手架能力的独立CRD，定义各种外置能力的配置。
 

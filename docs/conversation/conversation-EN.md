@@ -1391,3 +1391,13 @@ Also updated:
    - Harness CRD example (5.9 section)
    - AgentRuntime harness reference
    - metadata.name: model-openai-default → model-deepseek-default
+
+---
+
+## 80. Harness Chapter Title Modification
+
+**User**: Change the chapter title "5. Harness Design" to "5. Harness Design(WIP and TBD)"
+
+**Coding Agent**: Modification completed:
+- Chinese: `## 5. Harness设计` → `## 5. Harness设计（WIP and TBD）`
+- English: `## 5. Harness Design` → `## 5. Harness Design (WIP and TBD)`

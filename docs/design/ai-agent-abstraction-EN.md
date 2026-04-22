@@ -658,7 +658,7 @@ status:
 
 ---
 
-## 5. Harness Design
+## 5. Harness Design (WIP and TBD)
 
 Harness is an independent CRD for AI Agent scaffolding capabilities, defining configurations for various external capabilities.
 

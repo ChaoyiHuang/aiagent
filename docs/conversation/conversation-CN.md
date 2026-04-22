@@ -1391,3 +1391,13 @@ spec:
    - Harness CRD示例（5.9章节）
    - AgentRuntime harness引用
    - metadata.name: model-openai-default → model-deepseek-default
+
+---
+
+## 80. Harness章节标题修改
+
+**用户**："5. Harness Design"这一章节的标题修改为 "5. Harness Design(WIP and TBD)"
+
+**Coding Agent**：已完成修改：
+- 中文：`## 5. Harness设计` → `## 5. Harness设计（WIP and TBD）`
+- 英文：`## 5. Harness Design` → `## 5. Harness Design (WIP and TBD)`
