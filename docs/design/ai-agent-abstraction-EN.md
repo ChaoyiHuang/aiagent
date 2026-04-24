@@ -37,7 +37,7 @@ From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each 
 
 ### 1.2 Design Purpose
 
-Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any existing Agent framework (such as LangChain, Sematic Kernel, OpenClaw, Hermes, etc.) and future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
+Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any existing Agent framework (such as LangChain, ADK, Sematic Kernel, OpenClaw, Hermes, etc.) and future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
 
 To enhance resource utilization，AI agent abstraction should be able to support feature implementation like AI Agent bin pack conslidation, AI Agent migration, pod/node scale up/scale down, pod resize, sandbox reuse/hibernate/resize etc.
 
@@ -78,29 +78,33 @@ This design abstracts AI Agent into three core objects:
 
 ## 3. AgentRuntime Design
 
-AgentRuntime is the merged object of Agent Handler and Agent Framework, corresponding to a Pod instance. AgentRuntime and AIAgent CRD lifecycles Uniformly managed by AgentRuntime Controller, which is provided by platform.
+AgentRuntime is the merged object of Agent Handler and Agent Framework, corresponding to a Pod instance. The AgentRuntime controller manages the lifecycles of both AgentRuntime and AIAgent CRDs, and is agent framework agnotic.
 
 ### 3.1 Object Definition and Design Considerations
 
-- **Agent Handler**: Provided by the framework community, responsible for specific framework startup, configuration conversion, and AI Agent lifecycle. 
-- **Agent Framework**: Agent framework like LangChain, Sematic Kernel, OpenClaw, Hermes which run AI agent  
+- **Agent Handler**: Provided by the agent framework community, responsible for specific framework startup, configuration conversion, and AI Agent lifecycle. 
+- **Agent Framework**: Agent framework like LangChain, ADK, Sematic Kernel, OpenClaw, Hermes which run AI agent  
 
 **Advantages**:
 - Only one Controller needed, platform layer responsibilities are clear
 - Agent Handlers can be provided by framework ecosystem, decoupling development responsibilities
 - New framework integration only requires providing an Agent Handler image, no platform code modification needed
 
+**TBD**:
+- If it would be more reasonable to offload the AI Agent's traffic configuration to external gateways via the Handler.
+
 ### 3.2 Agent Handler and Agent Framework Process Mapping Modes
 
-**Key Design Consideration**: The Agent Handler and Agent Framework processes in AgentRuntime can have multiple mapping relationships, decided by the Agent Handler itself.
+**Key Design Consideration**: 
+- The Agent Handler and Agent Framework processes in AgentRuntime can have multiple mapping relationships, decided by the Agent Handler itself.
+- For optimal resource utilization, both the Agent Framework and Agent Handler are deployed as lightweight containers. The Agent Handler is managed by the container runtime, whereas the Agent Framework and individual AI Agents are instantiated by the Handler or via event-driven mechanisms.
 
 **Mode A: Single Process Multiple Agents Mode**
 
 ```
 Pod
-├── Agent Handler container
-└── Agent Framework container
-    └── One Agent Framework process
+├── Agent Handler process
+└── Agent Framework process
         ├── AIAgent-1
         ├── AIAgent-2
         └── AIAgent-3
@@ -111,15 +115,15 @@ Pod
 - Agent Framework process implements internal Agent routing and isolation
 
 **Considerations**:
-- Suitable for frameworks that natively support multi-Agent scenarios (such as CrewAI, ADK multi-Agent)
+- Suitable for frameworks that natively support multi agent instances(same type or different) scenarios
 - High resource efficiency, reduces process overhead
-- Agent Framework process responsible for internal Agent state isolation
+- Agent Framework process responsible for internal agent state isolation
 
 **Mode B: Multiple Processes Single Agent Mode**
 
 ```
 Pod
-├── Agent Handler container
+├── Agent Handler process
 │   └── Starts multiple Agent Framework processes
 ├── Agent Framework process-1 ──► AIAgent-1
 ├── Agent Framework process-2 ──► AIAgent-2
@@ -131,9 +135,9 @@ Pod
 - Process-level isolation, each Agent runs independently
 
 **Considerations**:
-- Suitable for scenarios requiring strong isolation
 - Single Agent failure doesn't affect other Agents
 - Higher resource overhead, but stronger isolation
+- Agent framework process may only support one visible agent from outside.
 
 **Decision Basis**: Which mode to adopt is decided by the Agent Handler based on framework characteristics, business requirements, and resource conditions. The platform layer doesn't enforce constraints, only provides infrastructure support (such as shared PID namespace for Handler to manage multiple processes).
 
@@ -187,7 +191,7 @@ AgentRuntime Pod
 
 **Considerations**:
 - Server mode suits scenarios where Agent needs to expose API for external invocation
-- Client mode suits scenarios where Agent needs to connect to existing platform services, such as WeChat bot, DingTalk assistant
+- Client mode suits scenarios where Agent needs to connect to existing platform services, such as WeChat weixin-claw, DingTalk assistant
 - Agent Handler selects appropriate communication mode based on framework characteristics
 - Platform layer provides network configuration support, but doesn't enforce communication methods
 
@@ -195,23 +199,7 @@ AgentRuntime Pod
 
 AgentRuntime design considers the resource utilization efficiency of AI Agents.
 
-#### 3.4.1 Resource Usage Characteristics
-
-Most AI Agents have the following resource usage characteristics:
-
-| Characteristic | Description |
-|----------------|-------------|
-| Long idle time | Agent mostly idle, waiting for task trigger |
-| Task burstiness | Resource usage spikes when task arrives, drops quickly after completion |
-| Task duration variance | Short tasks (seconds to minutes) and long tasks (hours) coexist |
-| Resource demand fluctuation | Different tasks have varying CPU, memory, network demands |
-
-**Considerations**:
-- Traditional one-to-one deployment (one Agent per Pod) causes resource waste
-- Idle Agents occupy Pod resources without actual work
-- Resource shortage during task bursts, requiring elastic scaling
-
-#### 3.4.2 Resource Sharing Strategies
+#### 3.4.1 Resource Sharing Strategies
 
 AgentRuntime supports two multi-AI Agent modes, both achieving resource utilization efficiency improvement:
 
@@ -236,7 +224,7 @@ AgentRuntime Pod
 
 **Applicable Scenarios**:
 - Agent framework natively supports single-process multi-Agent
-- Resource efficiency priority, lower isolation requirements
+- Resource efficiency priority, in-process namespace like isolation
 
 **Mode 2: Multi Agent Framework Processes Multiple AI Agents**
 
@@ -261,7 +249,6 @@ AgentRuntime Pod
 
 **Applicable Scenarios**:
 - Need process-level isolation for Agents
-- Agents run independently, no collaboration needs
 - Single Agent failure doesn't affect other Agents
 
 **Comparison Analysis**:
@@ -270,7 +257,6 @@ AgentRuntime Pod
 |-----------|------------------------------|----------------------------|
 | Process count | 1 Framework process | N Framework processes |
 | Resource sharing granularity | In-process sharing | Pod-level sharing |
-| Isolation strength | Weak (Framework internal) | Strong (process-level) |
 | Resource efficiency | Highest | High |
 | Agent failure impact | May affect same-process Agents | Only affects single Agent |
 | Agent Handler management | Monitor single process | Manage multiple processes |
@@ -281,7 +267,7 @@ AgentRuntime Pod
 - Idle Agents don't occupy extra Pods, dynamically schedule resources when tasks arrive
 - Platform layer provides shared PID namespace support for Handler to manage multiple processes
 
-#### 3.4.3 Design Points
+#### 3.4.2 Design Points
 
 AgentRuntime improves resource efficiency through the following design points:
 
@@ -314,6 +300,7 @@ AgentRuntime improves resource efficiency through the following design points:
 - Lightweight container isolation, reduce overhead
 - Requirement for independent image release and upgrade
 - Shared PID namespace supports Agent Handler starting and managing multiple Agent Framework processes
+- TBD: need to design a mechanism for Agent Handler to manage Agent Framework and AI Agents
 
 ### 3.6 Sandbox Integration Design
 
@@ -340,10 +327,6 @@ Reference existing Sandbox/SandboxClaim through Harness, support two mutually ex
 | Embedded Mode | AgentRuntime Pod itself is Sandbox | Agent needs strongly isolated execution environment |
 
 **Design Considerations**:
-
-**Question**: Why support two modes?
-
-**Considerations**:
 - External Mode: Sandbox can be resource pool, dynamic scheduling, multiple Agents share
 - Embedded Mode: Agent tightly coupled with Sandbox, execution environment more controllable
 - Mutually exclusive design: One Harness can only choose one mode, avoid configuration confusion
@@ -375,7 +358,11 @@ When using embedded Sandbox mode, SandboxTemplate defines the Pod base specifica
 - AgentRuntime's Agent Handler and Agent Framework are business core containers
 - Append mode preserves SandboxTemplate integrity while overlaying Agent containers
 
-### 3.7 CRD Structure Example
+### 3.7 Agent identification management
+
+Some Agent Frameworks generate internal UUIDs for logging and protocol interactions etc during runtime. The Agent Handler should establish a mapping between the CRD-defined Agent ID/Name and these framework-specific identifiers. This correlation ensures that all dimensions of an agent's information can be unified across the entire platform engineering ecosystem.
+
+### 3.8 CRD Structure Example
 
 ```yaml
 apiVersion: ai.k8s.io/v1
@@ -386,16 +373,8 @@ metadata:
 spec:
   agentHandler:
     image: adk-handler:v1.2.0
-    resources:
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
   agentFramework:
     image: adk-runtime:v1.2.0
-    resources:
-      limits:
-        cpu: "1000m"
-        memory: "1Gi"
 
   harness:
     model:
@@ -413,9 +392,6 @@ spec:
     - name: protocol
       configMapRef:
         name: protocol-config
-    - name: registry
-      secretRef:
-        name: registry-secret
 
   sandboxTemplateRef: secure-template  # Used in embedded Sandbox mode
 
@@ -447,13 +423,11 @@ AIAgent is an independent business object that can be scheduled to different Age
 
 ### 4.1 Object Definition and Design Considerations
 
-**Question**: Why separate AIAgent from AgentRuntime?
-
-**Decision**: Decoupled design, supports dynamic scheduling and migration.
+Decoupling AIAgent from AgentRuntime supports dynamic scheduling and migration, this design is critical for resource efficiency.
 
 **Considerations**:
 - One AgentRuntime can host multiple AIAgents (N:1 relationship)
-- AIAgent may need to migrate to different Runtime (failure, resource adjustment, maintenance)
+- AIAgent may need to migrate to different Runtime (failure, resource adjustment and consolidation, maintenance)
 - PVC data needs to follow AIAgent migration
 
 ### 4.2 Agent ID Design
@@ -487,11 +461,11 @@ Adopt hybrid scheduling mode:
 | Migration Type | Trigger Condition |
 |----------------|-------------------|
 | Active Migration | User modifies `runtimeRef.name` |
-| Automatic Migration | Runtime failure, resource shortage, maintenance eviction |
+| Automatic Migration | Runtime failure, resource shortage or consolidation, maintenance eviction |
 
 **Considerations**:
-- Support operations (automatic migration during maintenance)
-- Support user active adjustment (business requirement changes)
+- Support operations (eg. automatic migration during maintenance)
+- Support user active adjustment (eg. business requirement changes)
 
 ### 4.5 PVC Migration
 
@@ -533,8 +507,8 @@ User Responsibilities:
 **Decision**: AgentRuntime declares public configuration (for all Agents of same type), AIAgent appends Agent-specific configuration.
 
 **Considerations**:
-- Some configurations are same for all Agents of same type (e.g., protocol config, Registry connection)
-- Some configurations are Agent-specific (e.g., Prompt content, skill definitions)
+- Some configurations are same for all Agents of same type (e.g., protocol config)
+- Some configurations are Agent-specific (e.g., Prompt content, controlled skill set)
 - Public configuration managed at Runtime level reduces duplicate configuration
 
 #### 4.6.3 File Source
@@ -557,8 +531,6 @@ Pod Mount Structure:
 ├── runtime/                        # Runtime public configuration
 │   ├── protocol/
 │   │   └── protocol.yaml
-│   └── registry/
-│   │   └── registry.json
 └── agent/                          # Agent-specific configuration
     ├── prompt/
     │   └── prompt.yaml
@@ -664,7 +636,7 @@ spec:
         name: agent-prompt
     - name: skills
       configMapRef:
-        name: agent-skills
+        name: agent-skill-set
 
   volumePolicy: retain     # PVC lifecycle policy: retain | delete
 
@@ -701,13 +673,7 @@ Before diving into specific object designs, it's important to clarify the distin
 
 #### 5.1.2 Design Considerations
 
-**Question**: Why distinguish Harness and agentConfig?
-
-**Decision**: Both have different responsibilities and need independent management.
-
-**Considerations**:
-
-- **Harness is Platform Engineering Capability**: These capabilities are unrelated to business logic, generic capabilities provided by the platform layer, such as security isolation, traffic governance, observability, etc. The platform layer can perform fine-grained control based on Agent ID, for example allowing/denying a specific Agent to use a specific Sandbox.
+- **Harness is Platform Engineering Capability**: These capabilities are unrelated to business logic, generic capabilities provided by the platform layer, such as agent gateway, MCP registry, traffic governance, observability, etc. The platform layer can perform fine-grained control based on Agent ID or name, for example allowing/denying a specific Agent to use a specific Sandbox.
 
 - **agentConfig is Business Configuration**: These configurations are business information needed by Agent/Handler/Framework startup and runtime, such as Prompt content, communication protocol config, skill definitions, etc. The platform layer doesn't care about the specific content and format of these configurations, only responsible for the delivery mechanism.
 
