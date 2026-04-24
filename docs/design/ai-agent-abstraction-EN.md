@@ -2,21 +2,21 @@
 
 ## 1. Overview
 
-### 1.0 Scenarios and Challenges
+### 1.1 Scenarios and Challenges
 
-#### 1.0.1 Typical Scenario
+#### 1.1.1 Typical Scenario
 
-WeChat is a social software in China with over 1.2 billion daily active users. WeChat recently opened an weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat. Any WeChat user can scan a QR code to add an AI Agent as a friend and chat with it. AI Agents connect to WeChat's AI Agent Gateway through WeChat's provided SDK in client mode.
+WeChat is a social software in China with over 1.2 billion daily active users. WeChat recently opened a weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat. Any WeChat user can scan a QR code to add an AI Agent as a friend and chat with it. AI Agents connect to WeChat's AI Agent Gateway through WeChat's provided plugin in client mode.
 
 Alice runs a one-person AI Agent startup and developed a life assistant AI Agent. She found that if she independently develops a mobile app, she would incur expensive promotion costs and need to handle complex web service security governance and operations. Therefore, connecting through WeChat is the lowest-cost way to reach billion-level users.
 
-Now her life assistant AI Agent is developed, and she needs to consider many post-launch issues: renting virtual machines from public cloud to host these AI Agents is also a significant cost. One AI Agent exclusively occupying a VM or exclusively occupying a Pod/Sandbox is not an economical solution. If AI Agents grow to millions or tens of millions in a short time, the resource overhead is huge. Therefore, running many AI Agents in a single process is a reasonable solution choice. Separating AI Agent and Sandbox, each maximizing resource reuse, becomes her choice.
+Now her life assistant AI Agent is developed, and she needs to consider many post-launch issues: renting virtual machines from public cloud to host these AI Agents is also a significant cost. One AI Agent exclusively occupying a VM or exclusively occupying a Pod/Sandbox is not an economical solution. If AI Agents grow to millions or tens of millions in a short time, the unutilized resource overhead is huge. Therefore, running many AI Agents in a single process is a reasonable solution choice. Separating AI Agent and Sandbox, each maximizing resource reuse, becomes her choice.
 
-During business operation, she quickly discovered that many users try for one or two days and then become inactive, not knowing when they will resume activity, yet cannot be deleted; meanwhile, even for active users, the active duration of AI Agent and Sandbox varies greatly. To save operational costs, she needs to use minimal public cloud rental costs, dynamically consolidate AI Agents to maintain the minimum number of processes/Pods/Sandboxes, while dynamically scaling up to meet potential business growth bursts, and dynamically scaling down to address business vertical decline demands. In any situation, only maintain the minimum resources truly needed for current business.
+During business operation, she quickly discovered that many users try for one or two days and then become inactive, not knowing when they will resume activity, yet cannot be deleted; meanwhile, even for active users, the active duration of AI Agent and Sandbox varies greatly. To save operational costs, she needs to use minimal public cloud rental costs, dynamically consolidate AI Agents to maintain the minimum number of processes/Pods/Sandboxes, while dynamically scaling up to meet suddenly growth bursts, and dynamically scaling down to address business vertical decline demands. In any situation, only maintain the minimum resources truly needed for current business.
 
 As a one-person AI Agent startup, she needs AI Agent granularity platform engineering to help her.
 
-#### 1.0.2 AI Agent Resource Utilization Efficiency Problem
+#### 1.1.2 AI Agent Resource Utilization Efficiency Problem
 
 AI Agents have some new resource usage characteristics:
 
@@ -27,17 +27,19 @@ AI Agents have some new resource usage characteristics:
 | Task duration variance | Short tasks (seconds to minutes) and long tasks (hours) coexist |
 | Resource demand fluctuation | Different tasks have varying CPU, memory, network demands |
 
-When AI Agent executes tasks, it may execute tools, generate code and run it. Due to security reasons, AI Agent and execution environment have diverse considerations: AI Agent merged with execution environment, AI Agent separated from execution environment.
+When AI Agent executes tasks, it may execute tools, generate code and run it. Due to security reasons, AI Agent and execution environment(sandbox) have diverse considerations: AI Agent merged with execution environment, AI Agent separated from execution environment.
 
 When Kubernetes cluster runs large-scale number (and different types) of AI Agents, how to effectively improve cluster resource utilization efficiency is a common problem. To effectively utilize resources, being able to identify and handle load at AI Agent granularity is very important.
 
-#### 1.0.3 AI Agent Technology Rapid Iteration, Platform Engineering Cannot Keep Up with AI Agent Framework Development
+#### 1.1.3 AI Agent Technology Rapid Iteration, Platform Engineering Cannot Keep Up with AI Agent Framework Development
 
-From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each iteration brings technology framework evolution. CNCF/Kubernetes platform engineering, observability, governance, security, policy, traffic, etc., is still traditional platform engineering built on Pod, microservices, service mesh, Serverless foundations. To solve the problem in 1.0.1, need to solve AI Agent granularity perception problem.
+From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each iteration brings technology framework evolution. CNCF/Kubernetes platform engineering, observability, governance, security, policy, traffic, etc., is still traditional platform engineering built on Pod, microservices, service mesh, Serverless foundations. To solve the requirements in 1.0.1, need to solve AI Agent granularity perception problem.
 
-### 1.1 Purpose
+### 1.2 Design Purpose
 
 Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any existing Agent framework (such as LangChain, Sematic Kernel, OpenClaw, Hermes, etc.) and future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
+
+To enhance resource utilization，AI agent abstraction should be able to support feature implementation like AI Agent bin pack conslidation, AI Agent migration, pod/node scale up/scale down, pod resize, sandbox reuse/hibernate/resize etc.
 
 ---
 
@@ -68,7 +70,7 @@ This design abstracts AI Agent into three core objects:
 ┌─────────────────────────────────────┐
 │         Harness (Scaffolding)        │
 │    - Namespace-level independent CRD │
-│    - MCP, Memory, Sandbox, etc.      │
+│    - Model, Memory, Sandbox, etc.    │
 └─────────────────────────────────────┘
 ```
 
@@ -76,16 +78,12 @@ This design abstracts AI Agent into three core objects:
 
 ## 3. AgentRuntime Design
 
-AgentRuntime is the merged object of Agent Handler and Agent Framework, corresponding to a Pod instance.
+AgentRuntime is the merged object of Agent Handler and Agent Framework, corresponding to a Pod instance. AgentRuntime and AIAgent CRD lifecycles Uniformly managed by AgentRuntime Controller, which is provided by platform.
 
 ### 3.1 Object Definition and Design Considerations
 
-**Question**: How to avoid developing a separate Controller for each Agent framework?
-
-**Decision**: Adopt the Agent Handler pattern.
-
-- **Platform Layer Controller**: Uniformly manages AgentRuntime and AIAgent CRD lifecycles, does not perceive framework details
-- **Agent Handler**: Provided by the framework community, responsible for specific framework startup, configuration conversion, and Agent management
+- **Agent Handler**: Provided by the framework community, responsible for specific framework startup, configuration conversion, and AI Agent lifecycle. 
+- **Agent Framework**: Agent framework like LangChain, Sematic Kernel, OpenClaw, Hermes which run AI agent  
 
 **Advantages**:
 - Only one Controller needed, platform layer responsibilities are clear
