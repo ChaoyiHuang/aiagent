@@ -1401,3 +1401,132 @@ Also updated:
 **Coding Agent**: Modification completed:
 - Chinese: `## 5. Harness设计` → `## 5. Harness设计（WIP and TBD）`
 - English: `## 5. Harness Design` → `## 5. Harness Design (WIP and TBD)`
+
+---
+
+## 81. Add Problems and Challenges Section Before Overview
+
+**User**: Add ### 1.0 Problems and Challenges at the beginning of the document overview
+
+#### 1.0.1 AI Agent Resource Utilization Efficiency Problem
+
+AI Agents have new resource usage characteristics:
+- Long idle time
+- Task burstiness
+- Task duration variance
+- Resource demand fluctuation
+
+AI Agent and execution environment have diverse considerations: merged or separated.
+
+When Kubernetes cluster runs large-scale AI Agents, improving resource utilization efficiency is a common problem.
+
+#### 1.0.2 AI Agent Technology Rapid Iteration, Platform Engineering Cannot Keep Up
+
+From Langchain to Manus to OpenClaw, Hermes, technology frameworks keep evolving. CNCF/Kubernetes platform engineering is still built on traditional Pod, microservices, service mesh. Need to solve AI Agent granularity perception problem.
+
+**Coding Agent**: Added "1.0 Problems and Challenges" section at the beginning of overview, including:
+- 1.0.1 AI Agent Resource Utilization Efficiency Problem
+- 1.0.2 AI Agent Technology Rapid Iteration Problem
+
+Chapter structure becomes:
+- ## 1. Overview
+  - ### 1.0 Problems and Challenges (new)
+    - #### 1.0.1 Resource Utilization Efficiency Problem
+    - #### 1.0.2 Technology Iteration Problem
+  - ### 1.1 Purpose
+  - ### 1.2 Core Objectives
+
+---
+
+## 82. Modify Purpose Section Content
+
+**User**: Modify "1.1 Purpose" content:
+- Agent framework list: LangChain, Sematic Kernel, OpenClaw, Hermes, etc.
+- Add "future unknown Agent frameworks"
+- Add "Model" at beginning of scaffolding capabilities list
+- Change "AI Agent ID" to "AI Agent ID/Name"
+
+**Coding Agent**: Modification completed:
+
+Original:
+- Frameworks: LangChain, ADK, OpenClaw, CrewAI, Hermes, etc.
+- Capabilities: CLI Tools, MCP, Skills...
+- Connection: AI Agent ID
+
+Modified:
+- Frameworks: LangChain, Sematic Kernel, OpenClaw, Hermes, etc. + future unknown Agent frameworks
+- Capabilities: Model, MCP, Skills...
+- Connection: AI Agent ID/Name
+
+---
+
+## 83. Delete Core Objectives Section
+
+**User**: Remove ### 1.2 Core Objectives section
+
+**Coding Agent**: Deleted "### 1.2 Core Objectives" section. Chapter structure becomes:
+- ## 1. Overview
+  - ### 1.0 Problems and Challenges
+  - ### 1.1 Purpose
+- ## 2. Core Object Definitions
+
+---
+
+## 84. Add Disclaimer Note
+
+**User**: Add a note at the end of the document: The opinions expressed in this article do not reflect the view of the author's affiliation
+
+**Coding Agent**: Added note at the end of document:
+- Chinese: **注：本文所表达的观点不代表作者所属机构的立场。**
+- English: **Note: The opinions expressed in this article do not reflect the view of the author's affiliation.**
+
+---
+
+## 85. Modify 1.0 Section Title and Add Typical Scenario
+
+**User**:
+1. Change ### 1.0 title to ### 1.0 Scenarios and Challenges
+2. Add #### 1.0.1 Typical Scenario section about Alice's AI Agent startup connecting through WeChat
+
+**Coding Agent**: Modification completed:
+
+1. **Title change**:
+   - Chinese: ### 1.0 问题和挑战 → ### 1.0 场景和挑战
+   - English: ### 1.0 Problems and Challenges → ### 1.0 Scenarios and Challenges
+
+2. **Added Typical Scenario section (1.0.1)**:
+   - WeChat opened AI Agent interface, users can scan QR code to add AI Agent as friend
+   - Alice as one-person startup developed life assistant AI Agent
+   - Connecting through WeChat lowers promotion and operations costs
+   - Facing resource cost issues: single process multi-Agent, Agent/Sandbox separation for reuse
+   - User activity varies greatly, needs dynamic consolidate, scale up/down
+   - Needs AI Agent granularity platform engineering
+
+3. **Section numbering adjusted**:
+   - Original 1.0.1 → 1.0.2 (Resource Utilization Efficiency Problem)
+   - Original 1.0.2 → 1.0.3 (Technology Iteration Problem)
+
+---
+
+## 86. Modify Expressions in Typical Scenario of English Document
+
+**User**: Modify three expressions in English document:
+1. "WeChat recently opened an AI Agent interface similar to OpenClaw" → "WeChat recently opened an weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat"
+2. "One user exclusively occupying" → "One AI Agent exclusively occupying"
+3. "If users grow to millions or tens of millions" → "If AI Agents grow to millions or tens of millions"
+
+**Coding Agent**: Modification completed:
+
+1. **weixin-claw plugin description**: More accurately describes WeChat's weixin-claw plugin that enables AI Agents like OpenClaw or others to be accessible in WeChat
+2. **Resource occupancy subject correction**: Changed from "user exclusively occupying" to "AI Agent exclusively occupying", more accurately describing resource allocation granularity
+3. **Scale growth subject correction**: Changed from "users grow" to "AI Agents grow", more accurately describing business scale
+
+---
+
+## 87. Add Footnote
+
+**User**: Add a footnote at the end of the document. When other documents reference the scenario, credit should be given to the article author using common/typical footnote format.
+
+**Coding Agent**: Footnote added at the end of document:
+- Chinese: **脚注**：如在其他文档或文章中引用本文"1.0.1 典型场景"章节的案例描述，请注明出处及本文作者。
+- English: **Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.

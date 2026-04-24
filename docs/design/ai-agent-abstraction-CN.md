@@ -2,17 +2,42 @@
 
 ## 1. 概述
 
+### 1.0 场景和挑战
+
+#### 1.0.1 典型场景
+
+WeChat是中国的一家社交软件，日活用户超过1.2 billion。WeChat最近开放了类似OpenClaw这样的AI Agent接口，任何一个WeChat用户可以通过扫码就可以和一个AI Agent加为好友并聊天。AI Agent通过WeChat提供的接入SDK，以客户端模式接入到WeChat的AI Agent Gateway。
+
+Alice是一个人的AI Agent创业公司，她开发了一个生活助手AI Agent。她发现如果自己独立开发手机APP，需要负担成本昂贵的推广成本，且需要处理复杂的Web服务安全治理和运维。因此通过WeChat接入是最低成本抵达billion级用户的方式。
+
+现在她的生活助手AI Agent已经开发完，她需要考虑上线以后的很多问题：从公有云租用虚拟机去host这些AI Agent也是很大一笔成本，一个用户独占一个虚机或者独占Pod/Sandbox不是很合算的方案。如果用户短时间增长到百万、千万级别，资源开销很大。因此很自然的，单个进程运行很多AI Agent是比较合理的方案选择，AI Agent和Sandbox分离、分别最大化复用资源成为她的选择。
+
+在业务运行中，她很快发现，大量用户尝试一两天后就不再活跃，不知道哪一天会恢复活动，但又不能删除；同时即使是活跃用户，AI Agent和Sandbox的活跃时间长短也千差万别。为了节省运营成本，她需要用最少的公有云租用成本，通过动态consolidate AI Agent，维持进程/Pod/Sandbox的数量到最少，同时可以通过动态扩容满足可能爆发的业务增长，和动态缩容解决业务垂直消退的诉求。在任何情况下，仅仅维持当前业务真实需要的最少资源。
+
+作为一个人的AI Agent创业公司，她需要AI Agent粒度的平台工程来帮助她。
+
+#### 1.0.2 AI Agent的资源利用效率问题
+
+AI Agent具有一些新的资源使用特征：
+
+| 特征 | 说明 |
+|------|------|
+| 空闲时间长 | Agent大部分时间处于空闲状态，等待任务触发 |
+| 任务突发性 | 任务到来时资源使用突增，完成后快速回落 |
+| 任务时长差异 | 短任务（秒级~分钟级）和长任务（小时级）并存 |
+| 资源需求波动 | 不同任务对CPU、内存、网络的需求差异大 |
+
+AI Agent任务执行时候，可能执行工具，生成代码并运行，因为安全性原因，AI Agent和执行环境存在多样化的考虑：AI Agent和执行环境合并，AI Agent和执行环境分离。
+
+当Kubernetes集群运行规模数量（以及不同类型的）AI Agent时，如何有效地提升集群的资源利用效率，是一个共性的问题。而需要有效地利用资源，能够在AI Agent粒度去识别和处理负载，就非常重要。
+
+#### 1.0.3 AI Agent技术快速迭代，平台工程跟不上AI Agent框架发展
+
+从早期的Langchain，到Manus，到coding agent再到OpenClaw、Hermes，每一次迭代，技术框架都在演进。CNCF/Kubernetes的平台工程，可观察性，治理，安全，策略，流量等等，还是传统在Pod、微服务、服务网格、Serverless等基础上构建的平台工程。要解决1.0.1的问题，需要解决对AI Agent粒度的感知问题。
+
 ### 1.1 目的
 
-当前Kubernetes生态中缺少AI Agent这个核心对象的抽象。本设计旨在定义一个类似Pod的核心资源，能够对任何Agent框架（如LangChain、ADK、OpenClaw、CrewAI、Hermes等）进行统一抽象，同时外置Agent的各种脚手架能力（如CLI Tools、MCP、Skills、Knowledge/RAG、Memory、State、Guardrail、Security、Policy、Gateway、Sandbox等），这些外置能力可以通过AI Agent ID串接起来。
-
-### 1.2 核心目标
-
-- **框架无关性**：支持任何Agent框架，无需平台层为每个框架开发独立Controller
-- **能力外置化**：脚手架能力独立管理，可复用、可定制
-- **灵活调度**：AI Agent可以动态迁移到不同运行时环境
-- **多租户支持**：Namespace级别资源隔离
-- **安全隔离**：支持Sandbox执行环境的多种形态
+当前Kubernetes生态中缺少AI Agent这个核心对象的抽象。本设计旨在定义一个类似Pod的核心资源，能够对任何已经存在的Agent框架（如LangChain、Sematic Kernel、OpenClaw、Hermes等）和将来未知的Agent框架进行统一抽象，同时外置Agent的各种脚手架能力（如Model、MCP、Skills、Knowledge/RAG、Memory、State、Guardrail、Security、Policy、Gateway、Sandbox等），这些外置能力可以通过AI Agent ID/Name串接起来。
 
 ---
 
@@ -1113,3 +1138,11 @@ spec:
 6. **Sandbox集成**：复用agent-sandbox项目，支持多种执行环境形态
 
 通过本设计，AI Agent成为Kubernetes中的一等公民，类似Pod的核心抽象，能够适配任何Agent框架，支持复杂业务场景，同时保持安全隔离和多租户能力。
+
+---
+
+**注：本文所表达的观点不代表作者所属机构的立场。**
+
+---
+
+**脚注**：如在其他文档或文章中引用本文"1.0.1 典型场景"章节的案例描述，请注明出处及本文作者。

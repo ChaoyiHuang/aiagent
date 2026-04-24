@@ -2,17 +2,42 @@
 
 ## 1. Overview
 
+### 1.0 Scenarios and Challenges
+
+#### 1.0.1 Typical Scenario
+
+WeChat is a social software in China with over 1.2 billion daily active users. WeChat recently opened an weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat. Any WeChat user can scan a QR code to add an AI Agent as a friend and chat with it. AI Agents connect to WeChat's AI Agent Gateway through WeChat's provided SDK in client mode.
+
+Alice runs a one-person AI Agent startup and developed a life assistant AI Agent. She found that if she independently develops a mobile app, she would incur expensive promotion costs and need to handle complex web service security governance and operations. Therefore, connecting through WeChat is the lowest-cost way to reach billion-level users.
+
+Now her life assistant AI Agent is developed, and she needs to consider many post-launch issues: renting virtual machines from public cloud to host these AI Agents is also a significant cost. One AI Agent exclusively occupying a VM or exclusively occupying a Pod/Sandbox is not an economical solution. If AI Agents grow to millions or tens of millions in a short time, the resource overhead is huge. Therefore, running many AI Agents in a single process is a reasonable solution choice. Separating AI Agent and Sandbox, each maximizing resource reuse, becomes her choice.
+
+During business operation, she quickly discovered that many users try for one or two days and then become inactive, not knowing when they will resume activity, yet cannot be deleted; meanwhile, even for active users, the active duration of AI Agent and Sandbox varies greatly. To save operational costs, she needs to use minimal public cloud rental costs, dynamically consolidate AI Agents to maintain the minimum number of processes/Pods/Sandboxes, while dynamically scaling up to meet potential business growth bursts, and dynamically scaling down to address business vertical decline demands. In any situation, only maintain the minimum resources truly needed for current business.
+
+As a one-person AI Agent startup, she needs AI Agent granularity platform engineering to help her.
+
+#### 1.0.2 AI Agent Resource Utilization Efficiency Problem
+
+AI Agents have some new resource usage characteristics:
+
+| Characteristic | Description |
+|----------------|-------------|
+| Long idle time | Agent mostly idle, waiting for task trigger |
+| Task burstiness | Resource usage spikes when task arrives, drops quickly after completion |
+| Task duration variance | Short tasks (seconds to minutes) and long tasks (hours) coexist |
+| Resource demand fluctuation | Different tasks have varying CPU, memory, network demands |
+
+When AI Agent executes tasks, it may execute tools, generate code and run it. Due to security reasons, AI Agent and execution environment have diverse considerations: AI Agent merged with execution environment, AI Agent separated from execution environment.
+
+When Kubernetes cluster runs large-scale number (and different types) of AI Agents, how to effectively improve cluster resource utilization efficiency is a common problem. To effectively utilize resources, being able to identify and handle load at AI Agent granularity is very important.
+
+#### 1.0.3 AI Agent Technology Rapid Iteration, Platform Engineering Cannot Keep Up with AI Agent Framework Development
+
+From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each iteration brings technology framework evolution. CNCF/Kubernetes platform engineering, observability, governance, security, policy, traffic, etc., is still traditional platform engineering built on Pod, microservices, service mesh, Serverless foundations. To solve the problem in 1.0.1, need to solve AI Agent granularity perception problem.
+
 ### 1.1 Purpose
 
-Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any Agent framework (such as LangChain, ADK, OpenClaw, CrewAI, Hermes, etc.), while externalizing various scaffolding capabilities (such as CLI Tools, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID.
-
-### 1.2 Core Objectives
-
-- **Framework Independence**: Support any Agent framework without requiring the platform layer to develop a separate Controller for each framework
-- **Externalized Capabilities**: Scaffolding capabilities managed independently, reusable and customizable
-- **Flexible Scheduling**: AI Agents can dynamically migrate to different runtime environments
-- **Multi-tenancy Support**: Namespace-level resource isolation
-- **Security Isolation**: Support multiple forms of Sandbox execution environments
+Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any existing Agent framework (such as LangChain, Sematic Kernel, OpenClaw, Hermes, etc.) and future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
 
 ---
 
@@ -1097,3 +1122,11 @@ This design achieves the core resource definition for AI Agent in Kubernetes thr
 6. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
 
 Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios, while maintaining security isolation and multi-tenancy capabilities.
+
+---
+
+**Note: The opinions expressed in this article do not reflect the view of the author's affiliation.**
+
+---
+
+**Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.

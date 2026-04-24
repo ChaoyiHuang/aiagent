@@ -1401,3 +1401,132 @@ spec:
 **Coding Agent**：已完成修改：
 - 中文：`## 5. Harness设计` → `## 5. Harness设计（WIP and TBD）`
 - 英文：`## 5. Harness Design` → `## 5. Harness Design (WIP and TBD)`
+
+---
+
+## 81. 在概述前面增加问题和挑战章节
+
+**用户**：在文档概述的最前面，增加### 1.0 问题和挑战
+
+#### 1.0.1 AI Agent的资源利用效率问题
+
+AI Agent具有一些新的资源使用特征：
+- 空闲时间长
+- 任务突发性
+- 任务时长差异
+- 资源需求波动
+
+AI Agent和执行环境存在多样化的考虑：合并或分离。
+
+当Kubernetes集群运行规模数量AI Agent时，如何有效地提升集群的资源利用效率，是一个共性的问题。
+
+#### 1.0.2 AI Agent技术快速迭代，平台工程跟不上AI Agent框架发展
+
+从Langchain到Manus到OpenClaw、Hermes，技术框架不断演进。CNCF/Kubernetes的平台工程还是传统的Pod、微服务、服务网格基础上构建。需要解决对AI Agent粒度的感知问题。
+
+**Coding Agent**：已在文档概述最前面增加"1.0 问题和挑战"章节，包含：
+- 1.0.1 AI Agent的资源利用效率问题
+- 1.0.2 AI Agent技术快速迭代，平台工程跟不上AI Agent框架发展
+
+章节结构变为：
+- ## 1. 概述
+  - ### 1.0 问题和挑战（新增）
+    - #### 1.0.1 资源利用效率问题
+    - #### 1.0.2 技术迭代问题
+  - ### 1.1 目的
+  - ### 1.2 核心目标
+
+---
+
+## 82. 修改目的章节内容
+
+**用户**：修改"1.1 目的"的内容：
+- Agent框架列表改为：LangChain、Sematic Kernel、OpenClaw、Hermes等
+- 添加"将来未知的Agent框架"
+- 在脚手架能力列表开头添加"Model"
+- 将"AI Agent ID"改为"AI Agent ID/Name"
+
+**Coding Agent**：已完成修改：
+
+原文：
+- 框架：LangChain、ADK、OpenClaw、CrewAI、Hermes等
+- 能力：CLI Tools、MCP、Skills...
+- 连接：AI Agent ID
+
+修改后：
+- 框架：LangChain、Sematic Kernel、OpenClaw、Hermes等 + 将来未知的Agent框架
+- 能力：Model、MCP、Skills...
+- 连接：AI Agent ID/Name
+
+---
+
+## 83. 删除核心目标章节
+
+**用户**：### 1.2 核心目标 这一节去掉
+
+**Coding Agent**：已删除"### 1.2 核心目标"章节。章节结构变为：
+- ## 1. 概述
+  - ### 1.0 问题和挑战
+  - ### 1.1 目的
+- ## 2. 核心对象定义
+
+---
+
+## 84. 添加免责声明注解
+
+**用户**：在文档最后增加一个注解：The opinions expressed in this article do not reflect the view of the author's affiliation
+
+**Coding Agent**：已在文档最后添加注解：
+- 中文：**注：本文所表达的观点不代表作者所属机构的立场。**
+- 英文：**Note: The opinions expressed in this article do not reflect the view of the author's affiliation.**
+
+---
+
+## 85. 修改1.0章节标题并添加典型场景
+
+**用户**：
+1. ### 1.0的标题更改为 ### 1.0 场景和挑战
+2. 增加 #### 1.0.1 典型场景 小节，内容是关于Alice的AI Agent创业公司通过WeChat接入的场景描述
+
+**Coding Agent**：已完成修改：
+
+1. **标题修改**：
+   - 中文：### 1.0 问题和挑战 → ### 1.0 场景和挑战
+   - 英文：### 1.0 Problems and Challenges → ### 1.0 Scenarios and Challenges
+
+2. **新增典型场景小节（1.0.1）**：
+   - WeChat开放AI Agent接口，用户可扫码添加AI Agent为好友
+   - Alice作为一人创业公司开发生活助手AI Agent
+   - 通过WeChat接入降低推广和运维成本
+   - 面临资源成本问题：单进程多Agent、Agent/Sandbox分离复用
+   - 用户活跃度差异大，需要动态consolidate、扩缩容
+   - 需要AI Agent粒度的平台工程
+
+3. **章节编号调整**：
+   - 原1.0.1 → 1.0.2（资源利用效率问题）
+   - 原1.0.2 → 1.0.3（技术迭代问题）
+
+---
+
+## 86. 修改英文文档典型场景中的表述
+
+**用户**：修改英文文档中的三处表述：
+1. "WeChat recently opened an AI Agent interface similar to OpenClaw" → "WeChat recently opened an weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat"
+2. "One user exclusively occupying" → "One AI Agent exclusively occupying"
+3. "If users grow to millions or tens of millions" → "If AI Agents grow to millions or tens of millions"
+
+**Coding Agent**：已完成修改：
+
+1. **weixin-claw插件描述**：更准确地描述WeChat开放的weixin-claw插件，使得类似OpenClaw或其他AI Agent可以接入WeChat
+2. **资源占用主体修正**：从"user独占"改为"AI Agent独占"，更准确地描述资源分配粒度
+3. **规模增长主体修正**：从"users增长"改为"AI Agents增长"，更准确地描述业务规模
+
+---
+
+## 87. 添加脚注
+
+**用户**：在文档最后添加一个脚注，在其他文档中引用scenario的场景，对文章作者进行credit，以比较通俗习惯的说明添加脚注
+
+**Coding Agent**：已在文档最后添加脚注：
+- 中文：**脚注**：如在其他文档或文章中引用本文"1.0.1 典型场景"章节的案例描述，请注明出处及本文作者。
+- 英文：**Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.
