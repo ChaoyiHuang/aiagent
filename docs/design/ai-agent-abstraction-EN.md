@@ -689,59 +689,38 @@ Before diving into specific object designs, it's important to clarify the distin
 
 #### 5.2.1 Design Considerations
 
-**Question**: Why define capabilities as independent CRD instead of embedded configuration?
-
-**Decision**: Independent CRD, facilitates reuse and unified management.
+**Decision**: 
+- Independent CRD, facilitates reuse and unified management.
+- Adopt Namespace level, no cluster-level sharing support.
 
 **Considerations**:
 - Multiple AgentRuntimes/AIAgents can reference the same Harness
 - Capability configuration managed independently, modification doesn't require changing Agent CRD
 - Agent Handler needs standardized capability definitions to adapt different frameworks
-
-#### 5.2.2 Scope Decision
-
-Adopt Namespace level, no cluster-level sharing support.
-
-**Considerations**:
 - Multi-tenant isolation: Different Namespace configurations are independent
 - Permission control: Namespace-level RBAC
 - Follow K8s conventions (like Role vs ClusterRole)
 
-#### 5.2.3 Single Type Constraint
-
-One Harness CRD can only configure a single capability type, identified by the `type` field.
-
-**Considerations**:
-- Simple management: Each Harness has single responsibility
-- Easy reference: AgentRuntime references by type grouping
-- Follow K8s single responsibility principle
-
-#### 5.2.4 Standard Type List
-
-Currently supported capability types (extensible later):
+#### 5.2.2 Standard Capability Supported(extensible later)
 
 | Type | Description |
 |------|-------------|
 | model | Model service, LLM model integration configuration |
 | mcp | Model Context Protocol, tool/capability integration |
 | skills | Skill modules |
-| cli-tools | Command line tools |
 | knowledge | Knowledge base/RAG |
 | memory | Memory storage |
 | state | Runtime state |
 | guardrail | Safety guardrail |
 | security | Security policy |
 | policy | Policy control |
-| gateway | API gateway |
 | sandbox | Execution isolation environment |
 
 ### 5.3 Spec Structure
 
 Adopt design where each type has independent spec field.
 
-#### 5.3.1 Model Type Design
-
-Model as platform-provided core service capability, configuring model services that Agents can access through Harness.
+Model type design as example. Model as platform-provided core service capability, configuring model services that Agents can access through Harness.
 
 ```yaml
 spec:
@@ -756,62 +735,8 @@ spec:
         rateLimit: 100
       - name: deepseek-coder
         allowed: true
-      - name: qwen-turbo
-        allowed: true
-      - name: qwen-max
-        allowed: false
     defaultModel: deepseek-chat
 ```
-
-**Considerations**:
-- Model service is Agent's core dependency, needs unified configuration and management
-- Platform layer provides model integration capability, Handler doesn't need to handle different provider details
-- Multi-model configuration supported, Agent can choose appropriate model based on task requirements
-- Model access control and rate limiting policies, avoid resource abuse
-- Authentication info managed through Secret, aligns with K8s security practices
-
-#### 5.3.2 MCP Type Special Design
-
-Since MCP Servers are numerous and varied, it's impossible to enumerate all specific MCP Servers in Harness. Therefore, MCP Harness adopts **Registry Mode**, only configuring MCP Registry connection information and policies for allowed and denied MCP Servers.
-
-```yaml
-spec:
-  type: mcp
-  mcp:                      # MCP Registry configuration
-    registry:
-      endpoint: https://mcp-registry.example.com
-      authSecretRef: mcp-registry-token
-    allowedServers:         # Allowed MCP Server list (whitelist)
-      - github
-      - browser
-      - filesystem
-    deniedServers:          # Denied MCP Server list (blacklist)
-      - dangerous-tool
-    discoveryPolicy: allowlist  # Discovery policy: allowlist | denylist | all
-```
-
-**Considerations**:
-- MCP Servers cannot be enumerated, Harness only configures Registry not specific Servers
-- Agent Handler standardizes Registry connection and Server discovery mechanism
-- Specific MCP Servers are dynamically decided by Agent business, obtained through Registry
-- Whitelist/blacklist policies control available Server scope
-
-#### 5.3.3 Other Type Examples
-
-```yaml
-spec:
-  type: memory
-  memory:
-    backend: redis
-    config:
-      host: redis-server
-      port: 6379
-```
-
-**Considerations**:
-- Clear structure, type corresponds to configuration
-- Easy validation and type checking
-- Different types have different schema constraints
 
 ### 5.4 Binding Mode
 
@@ -822,11 +747,9 @@ AgentRuntime references Harness using type grouping:
 ```yaml
 harness:
   model:
-    - name: model-deepseek-default   # Model service configuration
+    - name: model-deepseek-default
   mcp:
-    - name: mcp-registry-default    # MCP Registry configuration
-  memory:
-    - name: redis-memory
+    - name: mcp-registry-default
   sandbox:
     - name: gvisor-sandbox
 ```
@@ -848,78 +771,32 @@ harnessOverride:
     - deny: [mcp-registry-external]
 ```
 
-**Considerations**:
-- MCP Harness references Registry configuration, not specific Servers
-- Agent can customize available Servers by overriding allowedServers/deniedServers
-- deny supports disabling entire Registry, flexible control
-
-### 5.5 Configuration Priority
-
-When conflict occurs, AIAgent customization configuration takes precedence (premise: capability is available and implementable).
-
-**Considerations**:
-- Agent business needs priority
-- Avoid Runtime configuration limiting Agent flexibility
-
-### 5.6 Capability Validation
-
-Controller validates capability availability when creating AIAgent, rejects creation if unavailable.
-
-**Considerations**:
-- Detect problems early, avoid runtime failures
-- Reduce Agent Handler runtime validation burden
-
-### 5.7 No Append Constraint
-
 AIAgent cannot append Harness not provided by AgentRuntime, can only override or deny.
 
 **Considerations**:
 - Security control: Runtime administrator can limit available capability scope
 - Avoid Agent arbitrarily extending capabilities, breaking security boundary
 
-### 5.8 Harness Configuration Delivery Mechanism
+### 5.5 Harness Configuration Delivery Mechanism
 
-#### 5.8.1 Shared Volume Mount Solution
+#### 5.5.1 Shared Volume Mount Solution
 
 Adopt shared Volume mounting ConfigMap to deliver Harness configuration to Agent Handler.
 
 ```
 Pod
-├── Agent Handler container
+├── Agent Handler
 │   └── /etc/harness/ (ConfigMap mount)
-└── Agent Framework container
+└── Agent Framework
 │   └── /etc/harness/ (Same Volume)
 ```
-
-#### 5.8.2 Design Considerations
-
-**Question**: How does Agent Handler obtain Harness configuration?
-
-**Decision**: Shared Volume mount ConfigMap, YAML format.
-
-**Considerations**:
-
-| Solution | Advantages | Disadvantages |
-|----------|------------|---------------|
-| Agent Handler accesses K8s API | Real-time change perception | Requires RBAC permissions, increases complexity |
-| Dynamic API push | Real-time update | Agent Handler needs to expose API, increases complexity |
-| Shared Volume mount | Simple, no permissions needed | ConfigMap update has delay (~1 minute) |
 
 Reasons for choosing shared Volume mount:
 - Agent Handler doesn't need K8s access permissions, reduces security risk
 - Configuration changes don't require Pod restart
-- Simple and reliable, follows Sidecar conventions (like Fluent Bit)
+- Simple and reliable, follows Sidecar conventions
 
-#### 5.8.3 ConfigMap Size Constraint
-
-ConfigMap has 1MB size limit.
-
-**Considerations**:
-- Harness configuration mainly connection parameters, access methods, small volume
-- Single Runtime configuration estimated tens of KB to hundreds of KB
-- 1MB sufficient, no need to break limit
-
-#### 5.8.4 File Watch Mechanism
+#### 5.5.2 File Watch Mechanism
 
 Agent Handler can monitor configuration file changes through polling or fsnotify:
 
@@ -934,98 +811,6 @@ for event := range watcher.Events {
 }
 ```
 
-### 5.9 CRD Structure Examples
-
-```yaml
-# Model type - Model service configuration
-apiVersion: ai.k8s.io/v1
-kind: Harness
-metadata:
-  name: model-deepseek-default
-  namespace: tenant-a
-spec:
-  type: model
-  model:
-    provider: deepseek
-    endpoint: https://api.deepseek.com/v1
-    authSecretRef: deepseek-api-key
-    models:
-      - name: deepseek-chat
-        allowed: true
-        rateLimit: 100
-      - name: deepseek-coder
-        allowed: true
-      - name: qwen-turbo
-        allowed: true
-      - name: qwen-max
-        allowed: false
-    defaultModel: deepseek-chat
-
----
-# MCP type - Registry configuration
-apiVersion: ai.k8s.io/v1
-kind: Harness
-metadata:
-  name: mcp-registry-default
-  namespace: tenant-a
-spec:
-  type: mcp
-  mcp:
-    registry:
-      endpoint: https://mcp-registry.example.com
-      authSecretRef: mcp-registry-token
-    allowedServers:         # Allowed MCP Server whitelist
-      - github
-      - browser
-      - filesystem
-      - slack
-    deniedServers:          # Denied MCP Server blacklist
-      - dangerous-tool
-    discoveryPolicy: allowlist  # Discovery policy: allowlist | denylist | all
-
----
-# MCP type - External Registry configuration
-apiVersion: ai.k8s.io/v1
-kind: Harness
-metadata:
-  name: mcp-registry-external
-  namespace: tenant-a
-spec:
-  type: mcp
-  mcp:
-    registry:
-      endpoint: https://external-mcp.example.org
-      authSecretRef: external-registry-token
-      # No allowedServers/deniedServers means allow all Servers
-    discoveryPolicy: all
-
----
-# Sandbox type (external mode)
-apiVersion: ai.k8s.io/v1
-kind: Harness
-metadata:
-  name: external-sandbox
-  namespace: tenant-a
-spec:
-  type: sandbox
-  sandbox:
-    external:
-      sandboxClaimRef: my-sandbox-claim
-
----
-# Sandbox type (embedded mode)
-apiVersion: ai.k8s.io/v1
-kind: Harness
-metadata:
-  name: embedded-sandbox
-  namespace: tenant-a
-spec:
-  type: sandbox
-  sandbox:
-    embedded:
-      sandboxTemplateRef: secure-template
-```
-
 ---
 
 ## 6. Design Objectives Achievement Analysis
@@ -1035,7 +820,7 @@ spec:
 **Achievement Method**:
 - Unified AgentRuntime Controller, doesn't perceive framework details
 - Agent Handler provided by framework community, responsible for framework adaptation
-- Standardized Harness definition, Agent Handler uniformly converts
+- Standardized Harness definition, Agent Handler converts
 
 **Effect**: New framework integration only requires providing Agent Handler image, no platform code modification needed.
 
@@ -1055,7 +840,7 @@ spec:
 - Hybrid scheduling mode (type automatic scheduling, instance fixed binding)
 - PVC follows migration
 
-**Effect**: Agent can dynamically migrate to different Runtime, supports operations maintenance and load balancing.
+**Effect**: Agent can dynamically migrate to different runtime instance, supports binpack, auto scaling(out/in), operations maintenance and load balancing.
 
 ### 6.4 Multi-tenancy Support
 
