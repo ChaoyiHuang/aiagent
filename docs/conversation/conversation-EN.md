@@ -1634,3 +1634,27 @@ Modified:
 **7. Summary section**:
 - Removed Pod/Node analogy
 - Added resource efficiency purpose
+
+---
+
+## 91. Sync English Document Reduced Content to Chinese
+
+**User**: The ai-agent-abstraction-EN.md document was manually reduced and refreshed, please reload and sync all changes from the English document to the Chinese document.
+
+**Coding Agent**: Synced the English document reduction changes to the Chinese document:
+
+**Chapter 5 Harness significantly simplified**:
+- Combined 5.2.1/5.2.2/5.2.3 into simplified 5.2.1 Design Considerations
+- 5.2.4 Standard Type List changed to 5.2.2 Standard Capability Supported, removed cli-tools and gateway
+- Removed 5.3.1/5.3.2/5.3.3 detailed designs, simplified to Model type example only
+- Removed 5.5 Configuration Priority, 5.6 Capability Validation sections
+- Combined 5.7 into end of 5.4.2
+- Simplified 5.8 Configuration Delivery Mechanism: removed design considerations table, ConfigMap size constraint
+- Completely removed 5.9 CRD Structure Examples section
+- Section numbering adjusted: 5.5→original 5.8, 5.5.1/5.5.2 simplified
+
+**Chapter 6 modifications**:
+- 6.3 Effect description added binpack, auto scaling
+
+**Removed footnote**:
+- Deleted footnote at end of document
