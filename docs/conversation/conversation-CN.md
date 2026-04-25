@@ -1530,3 +1530,107 @@ AI Agent和执行环境存在多样化的考虑：合并或分离。
 **Coding Agent**：已在文档最后添加脚注：
 - 中文：**脚注**：如在其他文档或文章中引用本文"1.0.1 典型场景"章节的案例描述，请注明出处及本文作者。
 - 英文：**Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.
+
+---
+
+## 88. 英文文档手动更新后同步到中文文档
+
+**用户**：ai-agent-abstraction-EN.md文档手工刷新了，请重新加载，把ai-agent-abstraction-EN.md英文文档修改了的地方，同步到ai-agent-abstraction-CN.md
+
+**Coding Agent**：已同步英文文档的修改到中文文档：
+
+1. **章节编号调整**：
+   - 1.0 场景和挑战 → 1.1 场景和挑战
+   - 1.0.1 典型场景 → 1.1.1 典型场景
+   - 1.0.2 → 1.1.2
+   - 1.0.3 → 1.1.3
+   - 1.1 目的 → 1.2 设计目的
+
+2. **新增内容**：在1.2设计目的章节末尾添加了关于资源利用效率提升的功能描述：
+   "为了提升资源利用效率，AI Agent抽象应能够支持AI Agent装箱整合（bin pack consolidation）、AI Agent迁移、Pod/Node扩缩容、Pod调整大小、Sandbox复用/休眠/调整大小等功能的实现。"
+
+3. **引用更新**：将1.1.3章节中的引用从"1.0.1"更新为"1.1.1"
+
+4. **脚注更新**：脚注中的章节引用从"1.0.1"更新为"1.1.1"
+
+---
+
+## 89. 同步英文文档AgentRuntime章节到中文
+
+**用户**：这些英文刷新内容也要同步到中文版本3. AgentRuntime Design章节
+
+**Coding Agent**：已同步AgentRuntime章节的修改到中文文档：
+
+1. **段落更新**：添加了"AgentRuntime和AIAgent CRD的生命周期由AgentRuntime Controller统一管理，该Controller由平台层提供。"
+
+2. **结构调整**：
+   - 移除了"问题：如何避免为每种Agent框架开发独立Controller？"的问题格式
+   - 移除了"决策：采用Agent Handler模式。"的决策格式
+   - 移除了"平台层Controller"的单独定义
+
+3. **新增Agent Framework定义**：添加了Agent Framework的定义项
+   "Agent Framework：如LangChain、Sematic Kernel、OpenClaw、Hermes等运行AI Agent的框架。"
+
+4. **Agent Handler描述更新**：从"负责具体框架的启动、配置转换、Agent管理"更新为"负责具体框架的启动、配置转换和AI Agent生命周期管理。"
+
+---
+
+## 90. 同步英文文档全面更新到中文
+
+**用户**：ai-agent-abstraction-EN.md文档手工刷新了，请重新加载，把ai-agent-abstraction-EN.md英文文档修改了的地方，同步到ai-agent-abstraction-CN.md
+
+**Coding Agent**：已全面同步英文文档的所有修改到中文文档：
+
+**1.1.1 典型场景章节修改**：
+- 更新WeChat插件描述为通用AI Agent插件
+- 更新"Web服务安全治理和运维"→"Web服务治理、安全和运维"
+- 更新"AI Agent和Sandbox分离"→"AI Agent和执行环境Sandbox分离"
+- 添加日常高峰低谷波动管理描述
+- 更新扩缩容术语（scaling out/in）
+
+**1.1.2章节**：
+- 添加"或混合模式"到执行环境考虑
+
+**1.2设计目的章节**：
+- 添加"ANY"强调词
+- 添加ADK到框架列表
+- 重写资源效率提升的技术描述
+
+**3. AgentRuntime章节**：
+- 更新Controller描述（framework agnostic）
+- 添加TBD：Agent Handler不应参与运营流量
+- 更新进程映射模式的进程图表（process而非container）
+- 更新多Agent实例描述（相同类型或不同类型）
+- 添加Agent Framework进程只支持一个对外可见Agent的考虑
+
+**3.4资源效率章节重构**：
+- 移除原3.4.1资源使用特征独立章节
+- 合并到3.4.1资源共享策略
+- 3.4.2改为设计要点
+- 对比表移除隔离强度列
+
+**3.5/3.6.3章节**：
+- 添加TBD：Agent Handler管理机制设计
+- 添加TBD：Sandbox复用时AI Agent无缝切换
+
+**新增3.7章节**：
+- Agent标识管理：CRD ID/Name与框架内部UUID映射
+
+**3.8 CRD示例更新**：
+- 移除resources字段
+- 更新模型名称为model-deepseek-default
+
+**4. AIAgent章节修改**：
+- 4.1开头改为"对于资源效率至关重要"
+- 4.4迁移触发条件添加整合、修改示例格式
+- 4.6.2考虑因素改为"受控技能集"
+- 4.7 CRD示例改为agent-skill-set
+
+**5. Harness章节修改**：
+- 添加Handler作为中介的段落说明
+- 5.1.1示例更新为GAIE Gateway等
+- 5.1.2 Harness描述更新
+
+**7.总结章节**：
+- 移除Pod/Node类比
+- 添加资源效率目标

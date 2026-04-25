@@ -1530,3 +1530,107 @@ Modified:
 **Coding Agent**: Footnote added at the end of document:
 - Chinese: **脚注**：如在其他文档或文章中引用本文"1.0.1 典型场景"章节的案例描述，请注明出处及本文作者。
 - English: **Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.
+
+---
+
+## 88. Sync English Document Manual Updates to Chinese Document
+
+**User**: The ai-agent-abstraction-EN.md document was manually refreshed, please reload and sync the changes from the English document to the Chinese document.
+
+**Coding Agent**: Synced the English document changes to the Chinese document:
+
+1. **Section numbering adjustment**:
+   - 1.0 Scenarios and Challenges → 1.1 Scenarios and Challenges
+   - 1.0.1 Typical Scenario → 1.1.1 Typical Scenario
+   - 1.0.2 → 1.1.2
+   - 1.0.3 → 1.1.3
+   - 1.1 Purpose → 1.2 Design Purpose
+
+2. **New content added**: Added description about resource utilization enhancement features at the end of section 1.2 Design Purpose:
+   "To enhance resource utilization，AI agent abstraction should be able to support feature implementation like AI Agent bin pack conslidation, AI Agent migration, pod/node scale up/scale down, pod resize, sandbox reuse/hibernate/resize etc."
+
+3. **Reference update**: Updated the reference in section 1.1.3 from "1.0.1" to "1.1.1"
+
+4. **Footnote update**: Updated the section reference in footnote from "1.0.1" to "1.1.1"
+
+---
+
+## 89. Sync English Document AgentRuntime Section to Chinese
+
+**User**: The English content updates for section 3. AgentRuntime Design should also be synced to the Chinese version.
+
+**Coding Agent**: Synced the AgentRuntime section changes to the Chinese document:
+
+1. **Paragraph update**: Added "AgentRuntime and AIAgent CRD lifecycles uniformly managed by AgentRuntime Controller, which is provided by platform."
+
+2. **Structure adjustment**:
+   - Removed the Q&A format "问题：如何避免为每种Agent框架开发独立Controller？"
+   - Removed the decision format "决策：采用Agent Handler模式。"
+   - Removed the separate "平台层Controller" definition
+
+3. **Added Agent Framework definition**: Added the Agent Framework definition item
+   "Agent Framework: Agent framework like LangChain, Sematic Kernel, OpenClaw, Hermes which run AI agent."
+
+4. **Agent Handler description update**: Changed from "负责具体框架的启动、配置转换、Agent管理" to "responsible for specific framework startup, configuration conversion, and AI Agent lifecycle management."
+
+---
+
+## 90. Sync Comprehensive English Document Updates to Chinese
+
+**User**: The ai-agent-abstraction-EN.md document was manually refreshed, please reload and sync all changes from the English document to the Chinese document.
+
+**Coding Agent**: Fully synced all changes from the English document to the Chinese document:
+
+**1.1.1 Typical Scenario section modifications**:
+- Updated WeChat plugin description to generic AI Agent plugin
+- Changed "web service security governance and operations" → "web service governance, security and operations"
+- Changed "AI Agent and Sandbox separation" → "AI Agent and execution environment Sandbox separation"
+- Added daily peak/off-peak fluctuation management description
+- Updated scaling terminology (scaling out/in)
+
+**1.1.2 section**:
+- Added "or hybrid mode" to execution environment considerations
+
+**1.2 Design Purpose section**:
+- Added "ANY" emphasis words
+- Added ADK to framework list
+- Rewrote resource efficiency improvement techniques description
+
+**3. AgentRuntime section**:
+- Updated Controller description (framework agnostic)
+- Added TBD: Agent Handler should not participate in operational traffic
+- Updated process mapping mode diagrams (process instead of container)
+- Updated multi-Agent instances description (same type or different type)
+- Added consideration about Agent Framework process only supporting one externally visible Agent
+
+**3.4 Resource Efficiency section restructuring**:
+- Removed original 3.4.1 Resource Usage Characteristics standalone section
+- Merged into 3.4.1 Resource Sharing Strategies
+- 3.4.2 changed to Design Points
+- Comparison table removed isolation strength column
+
+**3.5/3.6.3 sections**:
+- Added TBD: Agent Handler management mechanism design
+- Added TBD: Seamless AI Agent switching while reusing same Sandbox
+
+**New 3.7 section**:
+- Agent identification management: CRD ID/Name mapping with framework internal UUID
+
+**3.8 CRD example updates**:
+- Removed resources fields
+- Updated model name to model-deepseek-default
+
+**4. AIAgent section modifications**:
+- 4.1 opening changed to "critical for resource efficiency"
+- 4.4 migration triggers added consolidation, modified example format
+- 4.6.2 consideration changed to "controlled skill set"
+- 4.7 CRD example changed to agent-skill-set
+
+**5. Harness section modifications**:
+- Added paragraph describing Handler as mediator
+- 5.1.1 examples updated to GAIE Gateway etc.
+- 5.1.2 Harness description updated
+
+**7. Summary section**:
+- Removed Pod/Node analogy
+- Added resource efficiency purpose
