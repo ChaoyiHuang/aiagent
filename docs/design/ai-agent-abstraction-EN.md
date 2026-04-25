@@ -6,13 +6,13 @@
 
 #### 1.1.1 Typical Scenario
 
-WeChat is a social software in China with over 1.2 billion daily active users. WeChat recently opened a weixin-claw plugin for AI Agent like Openclaw or any other AI Agents to be accessible in WeChat. Any WeChat user can scan a QR code to add an AI Agent as a friend and chat with it. AI Agents connect to WeChat's AI Agent Gateway through WeChat's provided plugin in client mode.
+WeChat is a social software in China with over 1.2 billion daily active users. WeChat recently opened a plugin for AI Agent like Openclaw or other AI Agents to be accessible in WeChat. It open a door that any WeChat user can scan a QR code to add an AI Agent as a friend and chat with it. AI Agents connect to WeChat's AI Agent Gateway through WeChat's provided plugin in client mode.
 
-Alice runs a one-person AI Agent startup and developed a life assistant AI Agent. She found that if she independently develops a mobile app, she would incur expensive promotion costs and need to handle complex web service security governance and operations. Therefore, connecting through WeChat is the lowest-cost way to reach billion-level users.
+Alice runs a one-person AI Agent startup and developed a life assistant AI Agent. She found that if she independently develops a mobile app, she would incur expensive promotion costs and need to handle complex web service governance, security and operations. Therefore, connecting through WeChat is the lowest-cost way to reach billion-level users.
 
-Now her life assistant AI Agent is developed, and she needs to consider many post-launch issues: renting virtual machines from public cloud to host these AI Agents is also a significant cost. One AI Agent exclusively occupying a VM or exclusively occupying a Pod/Sandbox is not an economical solution. If AI Agents grow to millions or tens of millions in a short time, the unutilized resource overhead is huge. Therefore, running many AI Agents in a single process is a reasonable solution choice. Separating AI Agent and Sandbox, each maximizing resource reuse, becomes her choice.
+Now her life assistant AI Agent is developed, and she needs to consider many post-launch issues: renting virtual machines from public cloud to host these AI Agents is also a significant cost. One AI Agent exclusively occupying a VM or exclusively occupying a Pod/Sandbox is not an economical solution. If AI Agents grow to millions or tens of millions in a short time, the unutilized resource overhead is huge. Therefore, running many AI Agents in a single process is a reasonable solution choice. Separating AI Agent and execution environment Sandbox, each maximizing resource reuse, becomes her choice.
 
-During business operation, she quickly discovered that many users try for one or two days and then become inactive, not knowing when they will resume activity, yet cannot be deleted; meanwhile, even for active users, the active duration of AI Agent and Sandbox varies greatly. To save operational costs, she needs to use minimal public cloud rental costs, dynamically consolidate AI Agents to maintain the minimum number of processes/Pods/Sandboxes, while dynamically scaling up to meet suddenly growth bursts, and dynamically scaling down to address business vertical decline demands. In any situation, only maintain the minimum resources truly needed for current business.
+During business operation, she quickly discovered that many users try for several days and then become inactive, not knowing when they will resume activity, yet cannot be deleted; meanwhile, even for active users, the active duration of AI Agent and Sandbox varies greatly. To save operational costs, she needs to use minimal public cloud rental costs, dynamically consolidate AI Agents to maintain the minimum number of processes/Pods/Sandboxes, while dynamically scaling out to meet suddenly growth bursts, and dynamically scaling in to address vertical decline demands. Beyond growth perspective, auto-scaling is also crucial for managing peak and off-peak fluctuations on a daily basis. In any situation, only maintain the minimum resources truly needed for current business.
 
 As a one-person AI Agent startup, she needs AI Agent granularity platform engineering to help her.
 
@@ -27,19 +27,19 @@ AI Agents have some new resource usage characteristics:
 | Task duration variance | Short tasks (seconds to minutes) and long tasks (hours) coexist |
 | Resource demand fluctuation | Different tasks have varying CPU, memory, network demands |
 
-When AI Agent executes tasks, it may execute tools, generate code and run it. Due to security reasons, AI Agent and execution environment(sandbox) have diverse considerations: AI Agent merged with execution environment, AI Agent separated from execution environment.
+When AI Agent executes tasks, it may execute tools, generate code and run it. Due to security reasons, AI Agent and execution environment(sandbox) have diverse considerations: AI Agent merged with execution environment, AI Agent separated from execution environment, or hybrid mode.
 
 When Kubernetes cluster runs large-scale number (and different types) of AI Agents, how to effectively improve cluster resource utilization efficiency is a common problem. To effectively utilize resources, being able to identify and handle load at AI Agent granularity is very important.
 
 #### 1.1.3 AI Agent Technology Rapid Iteration, Platform Engineering Cannot Keep Up with AI Agent Framework Development
 
-From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each iteration brings technology framework evolution. CNCF/Kubernetes platform engineering, observability, governance, security, policy, traffic, etc., is still traditional platform engineering built on Pod, microservices, service mesh, Serverless foundations. To solve the requirements in 1.0.1, need to solve AI Agent granularity perception problem.
+From early Langchain, to Manus, to coding agent, then to OpenClaw, Hermes, each iteration brings technology framework evolution. CNCF/Kubernetes platform engineering, observability, governance, security, policy, traffic, etc., is still traditional platform engineering built on Pod, microservices, service mesh, Serverless foundations. To solve the requirements in 1.1.1, need to solve AI Agent granularity perception problem.
 
 ### 1.2 Design Purpose
 
-Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract any existing Agent framework (such as LangChain, ADK, Sematic Kernel, OpenClaw, Hermes, etc.) and future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
+Currently, the Kubernetes ecosystem lacks a core abstraction for AI Agents. This design aims to define a core resource similar to Pod that can uniformly abstract ANY existing Agent framework (such as LangChain, ADK, Sematic Kernel, OpenClaw, Hermes, etc.) and ANY future unknown Agent frameworks, while externalizing various scaffolding capabilities (such as Model, MCP, Skills, Knowledge/RAG, Memory, State, Guardrail, Security, Policy, Gateway, Sandbox, etc.), which can be connected through the AI Agent ID/Name.
 
-To enhance resource utilization，AI agent abstraction should be able to support feature implementation like AI Agent bin pack conslidation, AI Agent migration, pod/node scale up/scale down, pod resize, sandbox reuse/hibernate/resize etc.
+To improve resource efficiency and reduce costs, common techniques include AI Agent bin packing, migration, pod/node scaling (out/in), pod resizing, and sandbox reuse/hibernation/resizing etc. Therefore, the abstraction of AI Agents must enable these techniques to be implemented at the fine-grained level of the individual AI Agent.
 
 ---
 
@@ -91,7 +91,7 @@ AgentRuntime is the merged object of Agent Handler and Agent Framework, correspo
 - New framework integration only requires providing an Agent Handler image, no platform code modification needed
 
 **TBD**:
-- If it would be more reasonable to offload the AI Agent's traffic configuration to external gateways via the Handler.
+- The Agent Handler should not participate in the AI Agent's operational traffic. Instead, it should only configure the external gateway to manage the actual traffic flow.
 
 ### 3.2 Agent Handler and Agent Framework Process Mapping Modes
 
@@ -300,7 +300,7 @@ AgentRuntime improves resource efficiency through the following design points:
 - Lightweight container isolation, reduce overhead
 - Requirement for independent image release and upgrade
 - Shared PID namespace supports Agent Handler starting and managing multiple Agent Framework processes
-- TBD: need to design a mechanism for Agent Handler to manage Agent Framework and AI Agents
+- **TBD**: need to design a mechanism for Agent Handler to manage Agent Framework and AI Agents
 
 ### 3.6 Sandbox Integration Design
 
@@ -348,6 +348,7 @@ Harness reference ──► AIAgent/AgentRuntime use
 **Considerations**:
 - Warm pool reduces startup latency
 - Dynamic association supports on-demand scheduling
+- **TBD**: how to seamlessly switch between AI agents while reusing the same sandbox.
 
 #### 3.6.4 Container Merge Strategy (Embedded Sandbox)
 
@@ -657,6 +658,8 @@ status:
 
 Harness is an independent CRD for AI Agent scaffolding capabilities, defining configurations for various external capabilities.
 
+Actually, many gateways and registries already exist. When an Agent Framework cannot talk to them directly, the Agent Handler steps in to interact with them via a consistent interface. It then transforms these harness capabilities into a format the Agent Framework can understand. For instance, it can download skills from a Skill Hub for Agent Frameworks that only handle local configurations, effectively turning the Skill Hub into a universal provisioning center. The Agent Handler essentially serves as a mediator between standardized resources and the specific needs of different agent frameworks.
+
 ### 5.1 Harness vs agentConfig Concept Distinction
 
 Before diving into specific object designs, it's important to clarify the distinction between two core concepts: Harness and agentConfig.
@@ -666,14 +669,14 @@ Before diving into specific object designs, it's important to clarify the distin
 | Dimension | Harness | agentConfig |
 |-----------|---------|-------------|
 | **Positioning** | Platform engineering capabilities | Agent/Handler/Framework configuration information |
-| **Examples** | Observability, security, traffic governance, Sandbox isolation, MCP integration, etc. | Prompt, protocol config (A2A), skill definitions, Registry connection, etc. |
+| **Examples** | GAIE Gateway, MCP Registry, AgentGateway, Sandbox, etc. | Prompt, protocol config (A2A), etc. |
 | **Processing Method** | Platform-level processing based on Agent ID | Configuration content needed by Handler/Framework startup and runtime |
 | **Responsibility** | Platform layer manages and provides | Handler determines format and usage |
 | **Focus** | Capability externalization, standardization | Business configuration, framework-specific requirements |
 
 #### 5.1.2 Design Considerations
 
-- **Harness is Platform Engineering Capability**: These capabilities are unrelated to business logic, generic capabilities provided by the platform layer, such as agent gateway, MCP registry, traffic governance, observability, etc. The platform layer can perform fine-grained control based on Agent ID or name, for example allowing/denying a specific Agent to use a specific Sandbox.
+- **Harness is Platform Engineering Capability**: These capabilities are unrelated to business logic, generic capabilities provided by the platform layer, such as agent gateway, MCP registry, skill hub, etc. The platform layer can perform fine-grained control based on Agent ID or name, for example allowing/denying a specific Agent to use a specific Sandbox.
 
 - **agentConfig is Business Configuration**: These configurations are business information needed by Agent/Handler/Framework startup and runtime, such as Prompt content, communication protocol config, skill definitions, etc. The platform layer doesn't care about the specific content and format of these configurations, only responsible for the delivery mechanism.
 
@@ -1079,18 +1082,14 @@ spec:
 This design achieves the core resource definition for AI Agent in Kubernetes through multi-layer object abstraction (AIAgent, AgentRuntime, Harness, agentConfig). Core innovations include:
 
 1. **Agent Handler Pattern**: Platform layer Controller uniformly abstracts, framework layer Agent Handler specifically adapts, decouples development responsibilities
-2. **Agent and Runtime Separation**: Supports dynamic scheduling and migration, analogous to Pod and Node
+2. **Agent and Runtime Separation**: Supports dynamic scheduling and migration
 3. **Flexible Process Mapping Modes**: Supports single process multiple Agents and multiple processes single Agent modes, decided by Agent Handler
 4. **Harness Standardization**: Platform engineering capabilities externalized, inheritance + override mode customization
 5. **agentConfig Abstraction**: Business configuration separated from platform capabilities, Handler determines format, platform provides delivery mechanism
 6. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
 
-Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios, while maintaining security isolation and multi-tenancy capabilities.
+Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios and resource effieciency purpose, while maintaining security isolation and multi-tenancy capabilities.
 
 ---
 
 **Note: The opinions expressed in this article do not reflect the view of the author's affiliation.**
-
----
-
-**Footnote**: When referencing the "1.0.1 Typical Scenario" section in other documents or articles, please cite the source and credit the author of this article.
