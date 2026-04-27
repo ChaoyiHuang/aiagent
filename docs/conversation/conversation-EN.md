@@ -1658,3 +1658,37 @@ Modified:
 
 **Removed footnote**:
 - Deleted footnote at end of document
+
+---
+
+## 92. Add Consideration in Mount Path Specification Section
+
+**User**: In 4.6.4 Mount Path Specification add a Considerations point: not all agents have prompt configuration, e.g. OpenClaw doesn't need config
+
+**Coding Agent**: Added in 4.6.4 Mount Path Specification Considerations:
+- Chinese: 并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt
+- English: Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
+
+---
+
+## 93. Add Prompt Config Note in CRD Example
+
+**User**: In 4.7 CRD Structure Example, add a note after `- name: prompt`: not all agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
+
+**Coding Agent**: Added note after prompt config item in 4.7 CRD Structure Example:
+- Chinese: `- name: prompt                 # 并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt`
+- English: `- name: prompt                 # Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config`
+
+---
+
+## 94. Add TBD in File Source Section
+
+**User**: In 4.6.3 File Source, add TBD after Decision: Reference external ConfigMap/Secret: Whether AI Agent configuration needs multiple different configuration files, how Agent Handler standardizes AI Agent configuration delivery.
+
+**Coding Agent**: Added TBD after Decision in 4.6.3 File Source section:
+- Chinese:
+  - AI Agent的配置是否需要有多个不同的配置文件
+  - Agent Handler如何标准化AI Agent的配置传递
+- English:
+  - Whether AI Agent configuration needs multiple different configuration files
+  - How Agent Handler standardizes AI Agent configuration delivery

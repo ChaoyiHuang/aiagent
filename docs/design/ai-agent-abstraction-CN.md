@@ -516,6 +516,10 @@ Handler职责：
 
 **决策**：引用外部ConfigMap/Secret。
 
+**TBD**：
+- AI Agent的配置是否需要有多个不同的配置文件
+- Agent Handler如何标准化AI Agent的配置传递
+
 **考虑因素**：
 - 用户预先创建ConfigMap/Secret存放配置文件
 - AIAgent和AgentRuntime引用这些外部资源
@@ -543,6 +547,7 @@ Pod挂载结构：
 - Handler知道去`/etc/agent-config/`读取所有配置文件
 - `runtime/`和`agent/`子目录区分公共配置和专属配置
 - Handler自行决定合并逻辑，具有最大灵活性
+- 并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt
 
 #### 4.6.5 更新机制
 
@@ -632,7 +637,7 @@ spec:
           ttl: 3600
 
   agentConfig:                      # Agent专属配置（追加）
-    - name: prompt
+    - name: prompt                 # 并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt
       configMapRef:
         name: agent-prompt
     - name: skills

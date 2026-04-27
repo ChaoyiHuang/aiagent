@@ -1658,3 +1658,37 @@ AI Agent和执行环境存在多样化的考虑：合并或分离。
 
 **移除脚注**：
 - 删除文档末尾的脚注说明
+
+---
+
+## 92. 在挂载路径规范章节添加考虑因素
+
+**用户**：在4.6.4 Mount Path Specification中增加一点Considerations: 并不是所有的agent都会有prompt的配置，比如OpenClaw就不需要配置
+
+**Coding Agent**：已在4.6.4挂载路径规范的Considerations中添加：
+- 中文：并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt
+- 英文：Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
+
+---
+
+## 93. 在CRD示例中添加prompt配置备注
+
+**用户**：在4.7 CRD Structure Example 的- name: prompt 后填写备注并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt
+
+**Coding Agent**：已在4.7 CRD结构示例的prompt配置项后添加备注：
+- 中文：`- name: prompt                 # 并不是所有的Agent都会有prompt配置，如OpenClaw就不需要配置prompt`
+- 英文：`- name: prompt                 # Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config`
+
+---
+
+## 94. 在文件来源章节添加TBD
+
+**用户**：4.6.3 File Source的Decision: Reference external ConfigMap/Secret. 增加TBD：AI Agent的配置是否需要有多个不同的配置文件, Agent handler如何标准化AI Agent的配置传递。
+
+**Coding Agent**：已在4.6.3文件来源章节的Decision后添加TBD：
+- 中文：
+  - AI Agent的配置是否需要有多个不同的配置文件
+  - Agent Handler如何标准化AI Agent的配置传递
+- 英文：
+  - Whether AI Agent configuration needs multiple different configuration files
+  - How Agent Handler standardizes AI Agent configuration delivery

@@ -516,6 +516,10 @@ User Responsibilities:
 
 **Decision**: Reference external ConfigMap/Secret.
 
+**TBD**:
+- Whether AI Agent configuration needs multiple different configuration files
+- How Agent Handler standardizes AI Agent configuration delivery
+
 **Considerations**:
 - Users pre-create ConfigMap/Secret to store configuration files
 - AIAgent and AgentRuntime reference these external resources
@@ -543,6 +547,7 @@ Pod Mount Structure:
 - Handler knows to read all configuration files from `/etc/agent-config/`
 - `runtime/` and `agent/` sub-directories distinguish public and specific configuration
 - Handler decides merge logic itself, has maximum flexibility
+- Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
 
 #### 4.6.5 Update Mechanism
 
@@ -632,7 +637,7 @@ spec:
           ttl: 3600
 
   agentConfig:                      # Agent-specific configuration (append)
-    - name: prompt
+    - name: prompt                 # Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
       configMapRef:
         name: agent-prompt
     - name: skills
