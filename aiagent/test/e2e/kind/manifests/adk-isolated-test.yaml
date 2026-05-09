@@ -1,0 +1,97 @@
+# Test Case 2: ADK Isolated Process Mode (每进程一个Agent)
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Pod (AgentRuntime)                                              │
+# │  Handler Container                                              │
+# │    - ProcessMode: isolated                                      │
+# │    - Starts Framework process per agent                         │
+# │    - Handler manages multiple process instances                 │
+# │                                                                 │
+# │  Framework Container (DUMMY)                                    │
+# │    - ENTRYPOINT: pause                                          │
+# │    - ImageVolume provides binary                                │
+# └─────────────────────────────────────────────────────────────────┘
+#
+# Each AIAgent gets its own Framework process
+
+---
+# Harness for Model
+apiVersion: aiagent.io/v1
+kind: Harness
+metadata:
+  name: adk-isolated-model
+spec:
+  type: model
+  model:
+    provider: deepseek
+    endpoint: https://api.deepseek.com/v1
+    defaultModel: deepseek-chat
+    models:
+    - name: deepseek-chat
+      allowed: true
+    - name: deepseek-coder
+      allowed: true
+
+---
+# AgentRuntime for ADK Isolated Mode
+apiVersion: aiagent.io/v1
+kind: AgentRuntime
+metadata:
+  name: adk-isolated-runtime
+spec:
+  # ProcessMode: isolated - one process per agent
+  processMode: isolated
+
+  agentHandler:
+    image: aiagent/adk-handler:test
+    env:
+    - name: PROCESS_MODE
+      value: isolated
+
+  agentFramework:
+    image: aiagent/adk-framework:test
+    type: adk
+
+  harness:
+  - name: adk-isolated-model
+
+  replicas: 1
+
+---
+# AIAgent 1 (gets its own Framework process)
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: isolated-agent-1
+  labels:
+    runtime: adk-isolated-runtime
+spec:
+  description: "First agent with isolated process"
+  runtimeRef:
+    name: adk-isolated-runtime
+
+---
+# AIAgent 2 (gets its own Framework process)
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: isolated-agent-2
+  labels:
+    runtime: adk-isolated-runtime
+spec:
+  description: "Second agent with isolated process"
+  runtimeRef:
+    name: adk-isolated-runtime
+
+---
+# AIAgent 3 (gets its own Framework process)
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: isolated-agent-3
+  labels:
+    runtime: adk-isolated-runtime
+spec:
+  description: "Third agent with isolated process"
+  runtimeRef:
+    name: adk-isolated-runtime

@@ -1,0 +1,30 @@
+# Dockerfile for AI Agent Controller Manager
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /workspace
+
+# Copy go.mod and go.sum
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY api/ api/
+COPY pkg/ pkg/
+COPY cmd/ cmd/
+
+# Build manager binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager ./cmd/manager
+
+# Final stage
+FROM alpine:3.18
+
+WORKDIR /
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=builder /workspace/manager .
+
+# Create non-root user
+RUN adduser -D -u 1000 manager
+USER 1000
+
+ENTRYPOINT ["/manager"]

@@ -1,0 +1,82 @@
+# Test Case 1: ADK Shared Process Mode (单进程多Agent)
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Pod (AgentRuntime)                                              │
+# │  Handler Container                                              │
+# │    - ProcessMode: shared                                        │
+# │    - Starts single Framework process                            │
+# │    - Framework runs all agents internally                       │
+# │                                                                 │
+# │  Framework Container (DUMMY)                                    │
+# │    - ENTRYPOINT: pause                                          │
+# │    - ImageVolume provides binary at /framework-rootfs           │
+# └─────────────────────────────────────────────────────────────────┘
+
+---
+# Harness for Model
+apiVersion: aiagent.io/v1
+kind: Harness
+metadata:
+  name: adk-shared-model
+spec:
+  type: model
+  model:
+    provider: openai
+    endpoint: https://api.openai.com/v1
+    defaultModel: gpt-4
+    models:
+    - name: gpt-4
+      allowed: true
+    - name: gpt-3.5-turbo
+      allowed: true
+
+---
+# AgentRuntime for ADK Shared Mode
+apiVersion: aiagent.io/v1
+kind: AgentRuntime
+metadata:
+  name: adk-shared-runtime
+spec:
+  # ProcessMode: shared - single process for all agents
+  processMode: shared
+
+  agentHandler:
+    image: aiagent/adk-handler:test
+    env:
+    - name: PROCESS_MODE
+      value: shared
+
+  agentFramework:
+    image: aiagent/adk-framework:test
+    type: adk
+
+  harness:
+  - name: adk-shared-model
+
+  replicas: 1
+
+---
+# AIAgent 1
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: shared-agent-1
+  labels:
+    runtime: adk-shared-runtime
+spec:
+  description: "First agent in shared process mode"
+  runtimeRef:
+    name: adk-shared-runtime
+
+---
+# AIAgent 2
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: shared-agent-2
+  labels:
+    runtime: adk-shared-runtime
+spec:
+  description: "Second agent in shared process mode"
+  runtimeRef:
+    name: adk-shared-runtime

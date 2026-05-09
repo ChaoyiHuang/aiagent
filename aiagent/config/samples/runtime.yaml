@@ -1,0 +1,152 @@
+# Sample AgentRuntime for ADK-Go framework
+# All framework-specific configuration comes from the spec
+# Controller is framework-agnostic - it just uses spec values
+apiVersion: ai.k8s.io/v1
+kind: AgentRuntime
+metadata:
+  name: adk-runtime-sample
+  namespace: default
+spec:
+  # Handler Container - receives agent requests, manages framework process
+  agentHandler:
+    image: aiagent/adk-handler:latest
+    # Framework-specific command and args from spec
+    command: ["adk-handler"]
+    args: ["--debug"]
+    env:
+    - name: FRAMEWORK_BIN
+      value: "/shared/bin/adk-framework"
+    - name: WORK_DIR
+      value: "/shared/workdir"
+    - name: CONFIG_DIR
+      value: "/shared/config"
+    resources:
+      limits:
+        cpu: "1"
+        memory: "1Gi"
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+
+  # Framework Container - runs the actual agent framework
+  agentFramework:
+    image: aiagent/adk-framework:latest
+    type: adk
+    # Framework-specific command and args
+    command: ["adk-framework"]
+    args: []
+    env:
+    - name: WORK_DIR
+      value: "/shared/workdir"
+    - name: CONFIG_DIR
+      value: "/shared/config"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+
+  harness:
+  - name: model-harness-deepseek
+  - name: memory-harness-inmemory
+  - name: sandbox-harness-embedded
+
+  replicas: 1
+---
+# Sample AgentRuntime for OpenClaw framework
+# OpenClaw uses Gateway architecture: gateway run + HTTP API communication
+apiVersion: ai.k8s.io/v1
+kind: AgentRuntime
+metadata:
+  name: openclaw-runtime-sample
+  namespace: default
+spec:
+  # Handler Container - communicates with OpenClaw Gateway via HTTP
+  agentHandler:
+    image: aiagent/openclaw-handler:latest
+    command: ["openclaw-handler"]
+    args: ["--debug"]
+    env:
+    - name: OPENCLAW_GATEWAY_URL
+      value: "http://localhost:18789"
+    - name: WORK_DIR
+      value: "/shared/workdir"
+    - name: CONFIG_DIR
+      value: "/shared/config"
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+
+  # Framework Container - runs OpenClaw Gateway
+  # Command: openclaw gateway run (foreground mode for container)
+  agentFramework:
+    image: aiagent/openclaw-framework:latest
+    type: openclaw
+    command: ["openclaw"]
+    args: ["gateway", "run", "--bind", "loopback", "--port", "18789", "--auth", "none", "--force"]
+    env:
+    - name: OPENCLAW_CONFIG_DIR
+      value: "/shared/config"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+
+  harness:
+  - name: model-harness-deepseek
+  - name: memory-harness-inmemory
+
+  replicas: 1
+---
+# Sample AgentRuntime for Custom framework
+# Demonstrates fully configurable framework-agnostic approach
+apiVersion: ai.k8s.io/v1
+kind: AgentRuntime
+metadata:
+  name: custom-runtime-sample
+  namespace: default
+spec:
+  agentHandler:
+    image: my-org/my-handler:latest
+    command: ["my-handler"]
+    args: ["--config", "/shared/config/handler.yaml"]
+    env:
+    - name: CUSTOM_FRAMEWORK_ENDPOINT
+      value: "localhost:9000"
+    resources:
+      limits:
+        cpu: "1"
+        memory: "1Gi"
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+
+  agentFramework:
+    image: my-org/my-framework:latest
+    type: custom
+    command: ["my-framework"]
+    args: ["--serve", "--port", "9000"]
+    env:
+    - name: CUSTOM_CONFIG_PATH
+      value: "/shared/config/framework.yaml"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+
+  harness:
+  - name: model-harness-custom
+
+  replicas: 1

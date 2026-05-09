@@ -1,0 +1,84 @@
+# Sample Model Harness for DeepSeek
+apiVersion: ai.k8s.io/v1
+kind: Harness
+metadata:
+  name: model-harness-deepseek
+  namespace: default
+spec:
+  type: model
+  model:
+    provider: deepseek
+    endpoint: https://api.deepseek.com
+    apiKeyRef:
+      name: deepseek-api-key
+      key: api-key
+    defaultModel: deepseek-chat
+    models:
+    - name: deepseek-chat
+      allowed: true
+      maxTokens: 8192
+      temperature: 0.7
+    - name: deepseek-reasoner
+      allowed: true
+      maxTokens: 16384
+    rateLimit:
+      requestsPerMinute: 60
+      tokensPerMinute: 100000
+---
+# Sample Memory Harness
+apiVersion: ai.k8s.io/v1
+kind: Harness
+metadata:
+  name: memory-harness-inmemory
+  namespace: default
+spec:
+  type: memory
+  memory:
+    type: inmemory
+    ttl: 3600
+    maxSize: 1048576
+---
+# Sample Sandbox Harness
+apiVersion: ai.k8s.io/v1
+kind: Harness
+metadata:
+  name: sandbox-harness-gvisor
+  namespace: default
+spec:
+  type: sandbox
+  sandbox:
+    type: gvisor
+    mode: embedded
+    timeout: 300
+    resources:
+      cpuLimit: "1"
+      memoryLimit: "512Mi"
+      workspaceSize: "1Gi"
+---
+# Sample Skills Harness
+apiVersion: ai.k8s.io/v1
+kind: Harness
+metadata:
+  name: skills-harness-local
+  namespace: default
+spec:
+  type: skills
+  skills:
+    hubType: local
+    skills:
+    - name: web-search
+      version: "1.0.0"
+      allowed: true
+    - name: code-execution
+      version: "1.0.0"
+      allowed: true
+---
+# Secret for API key (example)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deepseek-api-key
+  namespace: default
+type: Opaque
+stringData:
+  api-key: "your-api-key-here"

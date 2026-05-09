@@ -1,0 +1,125 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aiagent-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/status
+  - configmaps
+  - configmaps/status
+  - secrets
+  - secrets/status
+  - persistentvolumeclaims
+  - persistentvolumeclaims/status
+  - services
+  - services/status
+  - events
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - deployments/status
+  - replicasets
+  - replicasets/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ai.k8s.io
+  resources:
+  - harnesses
+  - harnesses/status
+  - agentruntimes
+  - agentruntimes/status
+  - aigents
+  - aigents/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ai.k8s.io
+  resources:
+  - harnesses/finalizers
+  - agentruntimes/finalizers
+  - aigents/finalizers
+  verbs:
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aiagent-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aiagent-manager-role
+subjects:
+- kind: ServiceAccount
+  name: aiagent-controller-manager
+  namespace: aiagent-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aiagent-leader-election-role
+  namespace: aiagent-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aiagent-leader-election-rolebinding
+  namespace: aiagent-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aiagent-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: aiagent-controller-manager
+  namespace: aiagent-system

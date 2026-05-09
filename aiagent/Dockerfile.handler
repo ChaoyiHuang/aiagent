@@ -1,0 +1,38 @@
+# Dockerfile for AI Agent Handler Process
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /workspace
+
+# Copy go.mod and go.sum
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY api/ api/
+COPY pkg/ pkg/
+COPY cmd/ cmd/
+
+# Build handler binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o handler ./cmd/handler
+
+# Final stage
+FROM alpine:3.18
+
+WORKDIR /
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=builder /workspace/handler .
+
+# Create non-root user and config directories
+RUN adduser -D -u 1000 handler && \
+    mkdir -p /etc/agent-config/agent && \
+    mkdir -p /etc/harness && \
+    chown -R handler:handler /etc/agent-config /etc/harness
+
+USER 1000
+
+# Default config directories
+ENV CONFIG_DIR=/etc/agent-config
+ENV HARNESS_DIR=/etc/harness
+
+ENTRYPOINT ["/handler"]

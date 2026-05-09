@@ -1,0 +1,124 @@
+# Test Case 3: OpenClaw Multiple Gateway Mode (2 个 AIAgent 对应 2 个 Gateway)
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Pod (AgentRuntime)                                              │
+# │  Handler Container                                              │
+# │    - Starts Gateway process for each AIAgent                    │
+# │    - Each Gateway manages same internal agents                  │
+# │                                                                 │
+# │  Gateway Process #1 (AIAgent: OpenClaw-1)                      │
+# │    Port: 18789                                                  │
+# │    Internal agents: weather, calculator, assistant (invisible) │
+# │                                                                 │
+# │  Gateway Process #2 (AIAgent: OpenClaw-2)                      │
+# │    Port: 18790                                                  │
+# │    Internal agents: weather, calculator, assistant (invisible) │
+# │                                                                 │
+# │  Framework Container (DUMMY)                                    │
+# │    - ENTRYPOINT: pause                                          │
+# │    - ImageVolume provides OpenClaw v2026.3.8                    │
+# └─────────────────────────────────────────────────────────────────┘
+#
+# Kubernetes sees 2 AIAgent CRDs (OpenClaw-1, OpenClaw-2)
+# Each Gateway's internal agents (weather, calculator, assistant) are identical
+
+---
+# Harness for Model
+apiVersion: aiagent.io/v1
+kind: Harness
+metadata:
+  name: openclaw-model
+spec:
+  type: model
+  model:
+    provider: openai
+    endpoint: https://api.openai.com/v1
+    defaultModel: gpt-4o
+    models:
+    - name: gpt-4o
+      allowed: true
+
+---
+# Harness for Skills
+apiVersion: aiagent.io/v1
+kind: Harness
+metadata:
+  name: openclaw-skills
+spec:
+  type: skills
+  skills:
+    hubType: builtin
+    skills:
+    - name: weather
+      version: "1.0"
+      allowed: true
+    - name: calculator
+      version: "1.0"
+      allowed: true
+    - name: assistant
+      version: "1.0"
+      allowed: true
+
+---
+# AgentRuntime for OpenClaw (Multiple Gateway Mode)
+apiVersion: aiagent.io/v1
+kind: AgentRuntime
+metadata:
+  name: openclaw-runtime
+spec:
+  # ProcessMode: isolated - one Gateway per AIAgent
+  processMode: isolated
+
+  agentHandler:
+    image: aiagent/openclaw-handler:test
+    env:
+    - name: BASE_GATEWAY_PORT
+      value: "18789"
+
+  agentFramework:
+    image: aiagent/openclaw-framework:test  # OpenClaw v2026.3.8
+    type: openclaw
+
+  harness:
+  - name: openclaw-model
+  - name: openclaw-skills
+
+  replicas: 1
+
+---
+# AIAgent 1: OpenClaw-1
+# Kubernetes sees this as one Agent
+# Gateway internally manages weather, calculator, assistant (invisible)
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: OpenClaw-1
+  labels:
+    runtime: openclaw-runtime
+spec:
+  description: "OpenClaw Gateway instance 1"
+  runtimeRef:
+    name: openclaw-runtime
+  # Internal agents defined in openclaw.json (same for all instances):
+  # - weather
+  # - calculator
+  # - assistant
+
+---
+# AIAgent 2: OpenClaw-2
+# Kubernetes sees this as one Agent
+# Gateway internally manages weather, calculator, assistant (invisible)
+apiVersion: aiagent.io/v1
+kind: AIAgent
+metadata:
+  name: OpenClaw-2
+  labels:
+    runtime: openclaw-runtime
+spec:
+  description: "OpenClaw Gateway instance 2"
+  runtimeRef:
+    name: openclaw-runtime
+  # Internal agents defined in openclaw.json (same for all instances):
+  # - weather
+  # - calculator
+  # - assistant

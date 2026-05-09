@@ -1,0 +1,14 @@
+{
+  "agents": {
+    "list": [
+      {
+        "id": "stop-test-agent",
+        "name": "stop-test-agent",
+        "description": "stop-test-agent"
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}

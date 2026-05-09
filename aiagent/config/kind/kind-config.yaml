@@ -1,0 +1,25 @@
+# Kind cluster configuration for AI Agent deployment
+# Uses single node for demo/testing
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: aiagent-cluster
+nodes:
+- role: control-plane
+  # Enable mount propagation for bind mount support
+  extraMounts:
+  # Host docker socket for building images inside cluster (optional)
+  - hostPath: /var/run/docker.sock
+    containerPath: /var/run/docker.sock
+  # Shared config directory
+  - hostPath: /tmp/aiagent-config
+    containerPath: /shared-config
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    metadata:
+      name: config
+    # Enable feature gates if needed
+    featureGates:
+      # ProcessNamespaceSharing is stable in 1.29
+  labels:
+    aiagent.io/node-type: control-plane

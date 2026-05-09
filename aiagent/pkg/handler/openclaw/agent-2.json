@@ -1,0 +1,14 @@
+{
+  "agents": {
+    "list": [
+      {
+        "id": "agent-2",
+        "name": "agent-2",
+        "description": "agent-2"
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}

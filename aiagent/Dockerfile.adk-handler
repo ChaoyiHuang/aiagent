@@ -1,0 +1,57 @@
+# Dockerfile for ADK Handler
+# Process Manager for ADK Framework
+# Uses ImageVolume to access Framework's filesystem at /framework-rootfs
+#
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Handler Container (Process Manager)                             │
+# │                                                                 │
+# │  VolumeMounts:                                                  │
+# │    /framework-rootfs -> ImageVolume (ADK Framework image)       │
+# │    /etc/harness/<name> -> Harness ConfigMaps                    │
+# │    /shared/workdir -> EmptyDir (agent workspace)                │
+# │                                                                 │
+# │  Starts Framework:                                              │
+# │    exec.Command("/framework-rootfs/adk-framework")              │
+# │                                                                 │
+# │  Framework processes run in same Pod's PID namespace            │
+# │  Handler controls lifecycle (start/stop/monitor)               │
+# └─────────────────────────────────────────────────────────────────┘
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /workspace
+
+# Copy go.mod and go.sum
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY api/ api/
+COPY pkg/ pkg/
+COPY cmd/ cmd/
+
+# Build ADK Handler binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o adk-handler ./cmd/adk-handler
+
+# Final stage
+FROM alpine:3.18
+
+WORKDIR /
+
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=builder /workspace/adk-handler /adk-handler
+
+# Create directories
+RUN mkdir -p /etc/agent-config /etc/harness && \
+    mkdir -p /shared/workdir /shared/config
+
+# Framework binary path via ImageVolume
+# Handler mounts Framework image at /framework-rootfs
+# ADK Framework binary: /framework-rootfs/adk-framework
+ENV FRAMEWORK_BIN=/framework-rootfs/adk-framework
+ENV WORK_DIR=/shared/workdir
+ENV CONFIG_DIR=/shared/config
+
+ENTRYPOINT ["/adk-handler"]
+CMD ["--debug"]

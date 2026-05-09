@@ -1,0 +1,14 @@
+{
+  "agents": {
+    "list": [
+      {
+        "id": "status-test-agent",
+        "name": "status-test-agent",
+        "description": "status-test-agent"
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}

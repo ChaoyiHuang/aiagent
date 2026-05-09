@@ -1,0 +1,242 @@
+// Package agent defines the core abstraction interfaces for AI Agents.
+// This package provides a unified abstraction layer that can run different
+// agent frameworks (ADK-Go, OpenClaw, etc.) through a common interface.
+package agent
+
+import (
+	"iter"
+)
+
+// AgentType defines the type of agent.
+type AgentType string
+
+const (
+	AgentTypeLLM       AgentType = "llm"        // LLM-based agent
+	AgentTypeSequential AgentType = "sequential" // Sequential workflow agent
+	AgentTypeParallel  AgentType = "parallel"   // Parallel workflow agent
+	AgentTypeLoop      AgentType = "loop"       // Loop workflow agent
+	AgentTypeRemote    AgentType = "remote"     // Remote agent
+	AgentTypeCustom    AgentType = "custom"     // Custom agent
+)
+
+// Agent is the base interface which all agents must implement.
+//
+// Agents are created with framework-specific constructors but must conform
+// to this interface for the unified abstraction layer.
+//
+// The Run method uses Go 1.23's iter.Seq2 pattern to yield events and errors,
+// allowing for streaming execution and early termination.
+type Agent interface {
+	// Metadata
+	Name() string
+	Description() string
+	Type() AgentType
+
+	// Execution - yields events and errors during agent run
+	Run(ctx InvocationContext) iter.Seq2[*Event, error]
+
+	// Hierarchy - for multi-agent systems
+	SubAgents() []Agent
+	FindAgent(name string) Agent
+	FindSubAgent(name string) Agent
+
+	// Lifecycle hooks
+	BeforeAgentCallbacks() []BeforeAgentCallback
+	AfterAgentCallbacks() []AfterAgentCallback
+
+	// Internal state access - for framework adapters
+	internal() *AgentState
+}
+
+// AgentState holds the internal state of an agent.
+// Framework adapters can use this to store framework-specific state.
+type AgentState struct {
+	AgentType      AgentType
+	Config         any // Framework-specific config
+	Parent         Agent
+	DisallowTransferToParent bool
+	DisallowTransferToPeers  bool
+}
+
+// BeforeAgentCallback is called before the agent starts its run.
+// If it returns non-nil content or error, the agent run is skipped.
+type BeforeAgentCallback func(ctx CallbackContext) (*Content, error)
+
+// AfterAgentCallback is called after the agent has completed its run.
+// If it returns non-nil content or error, a new event is created.
+type AfterAgentCallback func(ctx CallbackContext) (*Content, error)
+
+// Content represents a message content with role and parts.
+type Content struct {
+	Role  string   // "user" or "model"
+	Parts []*Part  // Content parts (text, images, function calls, etc.)
+}
+
+// Part represents a single content part in a message.
+type Part struct {
+	// Text content
+	Text string
+
+	// Thought marker - indicates this is internal reasoning
+	Thought bool
+
+	// Inline data (images, files, etc.)
+	InlineData *InlineData
+
+	// Function call
+	FunctionCall *FunctionCall
+
+	// Function response
+	FunctionResponse *FunctionResponse
+
+	// Code execution result
+	CodeExecutionResult *CodeExecutionResult
+}
+
+// InlineData represents binary data embedded in a message.
+type InlineData struct {
+	MimeType string
+	Data     []byte
+}
+
+// FunctionCall represents a request to call a tool/function.
+type FunctionCall struct {
+	ID   string
+	Name string
+	Args map[string]any
+}
+
+// FunctionResponse represents the result of a tool/function call.
+type FunctionResponse struct {
+	ID     string
+	Name   string
+	Result map[string]any
+	Error  string
+}
+
+// CodeExecutionResult represents the result of code execution.
+type CodeExecutionResult struct {
+	Output string
+	Error  string
+}
+
+// Config is the configuration for creating a new Agent.
+// Framework adapters should use this as base configuration.
+type Config struct {
+	// Name must be a non-empty string, unique within the agent tree.
+	// Agent name cannot be "user", as it's reserved for end-user's input.
+	Name string
+
+	// Description of the agent's capability.
+	// LLM uses this to determine whether to delegate control to the agent.
+	// One-line description is preferred.
+	Description string
+
+	// SubAgents are the child agents that this agent can delegate tasks to.
+	// The abstraction layer will automatically set a parent of each sub-agent.
+	SubAgents []Agent
+
+	// BeforeAgentCallbacks is called before the agent starts its run.
+	BeforeAgentCallbacks []BeforeAgentCallback
+
+	// Run is the function that defines the agent's behavior for custom agents.
+	Run func(InvocationContext) iter.Seq2[*Event, error]
+
+	// AfterAgentCallbacks is called after the agent has completed its run.
+	AfterAgentCallbacks []AfterAgentCallback
+}
+
+// BaseAgent provides a base implementation of the Agent interface.
+// Framework adapters can embed this to reduce implementation burden.
+type BaseAgent struct {
+	name                 string
+	description          string
+	agentType            AgentType
+	subAgents            []Agent
+	beforeAgentCallbacks []BeforeAgentCallback
+	run                  func(InvocationContext) iter.Seq2[*Event, error]
+	afterAgentCallbacks  []AfterAgentCallback
+	state                AgentState
+}
+
+// NewBaseAgent creates a new BaseAgent with the given configuration.
+func NewBaseAgent(cfg Config, agentType AgentType) *BaseAgent {
+	return &BaseAgent{
+		name:                 cfg.Name,
+		description:          cfg.Description,
+		agentType:            agentType,
+		subAgents:            cfg.SubAgents,
+		beforeAgentCallbacks: cfg.BeforeAgentCallbacks,
+		run:                  cfg.Run,
+		afterAgentCallbacks:  cfg.AfterAgentCallbacks,
+		state: AgentState{
+			AgentType: agentType,
+			Config:    nil,
+		},
+	}
+}
+
+func (a *BaseAgent) Name() string {
+	return a.name
+}
+
+func (a *BaseAgent) Description() string {
+	return a.description
+}
+
+func (a *BaseAgent) Type() AgentType {
+	return a.agentType
+}
+
+func (a *BaseAgent) SubAgents() []Agent {
+	return a.subAgents
+}
+
+func (a *BaseAgent) BeforeAgentCallbacks() []BeforeAgentCallback {
+	return a.beforeAgentCallbacks
+}
+
+func (a *BaseAgent) AfterAgentCallbacks() []AfterAgentCallback {
+	return a.afterAgentCallbacks
+}
+
+func (a *BaseAgent) FindAgent(name string) Agent {
+	if a.Name() == name {
+		return a
+	}
+	return a.FindSubAgent(name)
+}
+
+func (a *BaseAgent) FindSubAgent(name string) Agent {
+	for _, subAgent := range a.SubAgents() {
+		if result := subAgent.FindAgent(name); result != nil {
+			return result
+		}
+	}
+	return nil
+}
+
+func (a *BaseAgent) internal() *AgentState {
+	return &a.state
+}
+
+// Run implements the Agent interface. It executes the agent's run function
+// if provided, otherwise returns an empty iterator.
+func (a *BaseAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+	if a.run == nil {
+		return func(yield func(*Event, error) bool) {
+			// Empty iterator for agents without run function
+		}
+	}
+	return a.run(ctx)
+}
+
+// AddSubAgent adds a sub-agent to the agent's subAgents list.
+func (a *BaseAgent) AddSubAgent(subAgent Agent) {
+	a.subAgents = append(a.subAgents, subAgent)
+}
+
+// SetSubAgents sets the agent's subAgents list.
+func (a *BaseAgent) SetSubAgents(subAgents []Agent) {
+	a.subAgents = subAgents
+}

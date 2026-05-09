@@ -1,0 +1,56 @@
+# Dockerfile for ADK Framework (DUMMY Container)
+# ImageVolume pattern: This container provides image content ONLY.
+# Handler Container is the process manager that starts/stops Framework processes.
+#
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Pod (AgentRuntime)                                              │
+# │                                                                 │
+# │  Handler Container mounts this image at /framework-rootfs       │
+# │  Handler starts: /framework-rootfs/adk-framework                │
+# │                                                                 │
+# │  This Container: ENTRYPOINT pause (just sleeps forever)         │
+# │  Provides: adk-framework binary                                 │
+# └─────────────────────────────────────────────────────────────────┘
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /workspace
+
+# Copy go.mod and go.sum
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY api/ api/
+COPY pkg/ pkg/
+COPY cmd/ cmd/
+
+# Build ADK Framework binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o adk-framework ./cmd/adk-framework
+
+# Final stage
+FROM alpine:3.18
+
+WORKDIR /
+
+# Install necessary tools and pause script
+RUN apk --no-cache add ca-certificates tzdata
+
+# Copy ADK Framework binary (Handler will use via ImageVolume)
+COPY --from=builder /workspace/adk-framework /adk-framework
+
+# Create pause script (minimal sleep process)
+RUN echo '#!/bin/sh' > /pause && \
+    echo 'while true; do sleep 365d; done' >> /pause && \
+    chmod +x /pause
+
+# Create directories (Handler will use these via ImageVolume)
+RUN mkdir -p /shared/workdir /shared/config && \
+    mkdir -p /etc/agent-config
+
+# Default work directory (for Handler's reference)
+ENV WORK_DIR=/shared/workdir
+
+# DUMMY entrypoint - just sleep forever
+# Handler Container starts actual Framework processes using /framework-rootfs/adk-framework
+ENTRYPOINT ["/pause"]

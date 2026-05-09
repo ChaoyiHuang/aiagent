@@ -1,0 +1,57 @@
+# Sample AIAgent using ADK-Go framework
+apiVersion: ai.k8s.io/v1
+kind: AIAgent
+metadata:
+  name: adk-agent-sample
+  namespace: default
+spec:
+  runtimeRef:
+    name: adk-runtime-sample
+    type: adk-go
+  harnessOverride:
+    model:
+    - name: model-harness-deepseek
+      allowedModels:
+      - deepseek-chat
+    skills:
+    - name: skills-harness-local
+      allowedSkills:
+      - web-search
+  volumePolicy: retain
+  description: "Sample AI Agent using ADK-Go framework"
+  agentType: llm
+  tools:
+  - name: search
+    enabled: true
+  - name: calculator
+    enabled: true
+---
+# Sample AIAgent using OpenClaw framework
+apiVersion: ai.k8s.io/v1
+kind: AIAgent
+metadata:
+  name: openclaw-agent-sample
+  namespace: default
+spec:
+  runtimeRef:
+    name: openclaw-runtime-sample
+    type: openclaw
+  volumePolicy: retain
+  description: "Sample AI Agent using OpenClaw framework"
+  agentType: llm
+---
+# Sample Sequential AIAgent with sub-agents
+apiVersion: ai.k8s.io/v1
+kind: AIAgent
+metadata:
+  name: sequential-agent-sample
+  namespace: default
+spec:
+  runtimeRef:
+    name: adk-runtime-sample
+    type: adk-go
+  description: "Sequential workflow agent"
+  agentType: sequential
+  subAgents:
+  - name: adk-agent-sample
+  volumePolicy: retain

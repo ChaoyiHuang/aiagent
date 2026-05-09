@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiagent-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiagent-controller-manager
+  namespace: aiagent-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiagent-controller-manager
+  namespace: aiagent-system
+  labels:
+    app: aiagent-controller-manager
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiagent-controller-manager
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app: aiagent-controller-manager
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: aiagent-controller-manager
+      containers:
+      - name: manager
+        image: aiagent/controller-manager:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=:8080
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 9443
+          name: webhook
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: cert
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+      volumes:
+      - name: cert
+        secret:
+          secretName: webhook-server-cert
+          defaultMode: 420
+      terminationGracePeriodSeconds: 10

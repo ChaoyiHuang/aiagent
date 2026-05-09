@@ -1,0 +1,30 @@
+# Manager Deployment for E2E Testing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiagent-manager
+  namespace: aiagent-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiagent-manager
+  template:
+    metadata:
+      labels:
+        app: aiagent-manager
+    spec:
+      containers:
+      - name: manager
+        image: aiagent/manager:test
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: ENABLE_WEBHOOKS
+          value: "false"
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi

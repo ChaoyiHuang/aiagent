@@ -1,0 +1,27 @@
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "deepseek-chat"
+      }
+    },
+    "list": [
+      {
+        "id": "test-openclaw-agent",
+        "name": "test-openclaw-agent",
+        "description": "test-openclaw-agent",
+        "model": {
+          "primary": "deepseek-chat"
+        }
+      }
+    ]
+  },
+  "models": {
+    "providers": {
+      "deepseek": {}
+    }
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}

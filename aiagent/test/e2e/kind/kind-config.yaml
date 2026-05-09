@@ -1,0 +1,28 @@
+# Kind Cluster Configuration for AIAgent E2E Tests
+# Kubernetes 1.35+ required for ImageVolume feature
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: aiagent-test
+nodes:
+- role: control-plane
+  image: kindest/node:v1.35.0
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    featureGates:
+      ImageVolume: true
+    apiServer:
+      extraArgs:
+        feature-gates: "ImageVolume=true"
+    controllerManager:
+      extraArgs:
+        feature-gates: "ImageVolume=true"
+    scheduler:
+      extraArgs:
+        feature-gates: "ImageVolume=true"
+- role: worker
+  image: kindest/node:v1.35.0
+- role: worker
+  image: kindest/node:v1.35.0
+featureGates:
+  ImageVolume: true

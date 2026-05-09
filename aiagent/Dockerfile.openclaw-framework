@@ -1,0 +1,38 @@
+# Dockerfile for OpenClaw Framework (DUMMY Container)
+# ImageVolume pattern: This container provides image content ONLY.
+# Handler Container is the process manager that starts/stops Framework processes.
+#
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Pod (AgentRuntime)                                              │
+# │                                                                 │
+# │  Handler Container mounts this image at /framework-rootfs       │
+# │  Handler starts: /framework-rootfs/usr/local/bin/openclaw       │
+# │                                                                 │
+# │  This Container: ENTRYPOINT pause (just sleeps forever)         │
+# │  Provides: Node.js runtime + OpenClaw CLI binaries              │
+# └─────────────────────────────────────────────────────────────────┘
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Install OpenClaw v2026.3.8 via npm (provides binaries for Handler to use)
+RUN npm install -g openclaw@v2026.3.8
+
+# Create pause script (minimal sleep process)
+RUN echo '#!/bin/sh' > /pause && \
+    echo 'while true; do sleep 365d; done' >> /pause && \
+    chmod +x /pause
+
+# Create directories (Handler will use these via ImageVolume)
+RUN mkdir -p /shared/workdir /shared/config && \
+    mkdir -p /etc/agent-config && \
+    mkdir -p /root/.openclaw/agents
+
+# Default environment (for Handler's reference)
+ENV OPENCLAW_CONFIG_DIR=/shared/config
+ENV WORK_DIR=/shared/workdir
+
+# DUMMY entrypoint - just sleep forever
+# Handler Container starts actual Gateway processes using /framework-rootfs/usr/local/bin/openclaw
+ENTRYPOINT ["/pause"]
