@@ -1,7 +1,11 @@
 #!/bin/bash
 # AIAgent E2E Test - Complete Setup and Automation Script
 # Installs all dependencies (Docker, Kind, Kubectl, jq) and runs E2E tests
-# Kubernetes version: 1.35
+#
+# Version Configuration:
+#   - Kind: v0.31.0
+#   - Kubernetes: v1.35.0
+#   - ImageVolume: enabled via feature gate in K8s 1.35
 #
 # Usage:
 #   ./run-e2e-test.sh          # Full setup + test
@@ -14,12 +18,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 KIND_CLUSTER_NAME="aiagent-test"
 K8S_VERSION="v1.35.0"
+KIND_VERSION="v0.31.0"
 
 echo "=================================================="
 echo "AIAgent E2E Test Automation"
 echo "=================================================="
 echo "Project Root: ${PROJECT_ROOT}"
 echo "Kind Cluster: ${KIND_CLUSTER_NAME}"
+echo "Kind Version: ${KIND_VERSION}"
 echo "Kubernetes Version: ${K8S_VERSION}"
 echo "=================================================="
 
@@ -49,15 +55,19 @@ install_docker() {
 }
 
 install_kind() {
-    echo ">>> [2/4] Installing Kind..."
+    echo ">>> [2/4] Installing Kind v${KIND_VERSION}..."
 
     if command -v kind >/dev/null 2>&1; then
-        echo "    Kind already installed: $(kind version)"
-        return 0
+        KIND_INSTALLED=$(kind version 2>/dev/null | head -1)
+        echo "    Kind already installed: ${KIND_INSTALLED}"
+        # Check if version matches
+        if [[ "$KIND_INSTALLED" == *"${KIND_VERSION}"* ]]; then
+            return 0
+        fi
+        echo "    Updating Kind to ${KIND_VERSION}..."
     fi
 
-    # Install Kind v0.27.0 (supports K8s 1.35)
-    KIND_VERSION="v0.27.0"
+    # Install Kind
     curl -Lo /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
     chmod +x /usr/local/bin/kind
 
@@ -73,7 +83,7 @@ install_kubectl() {
         return 0
     fi
 
-    # Install Kubectl matching K8s 1.35
+    # Install Kubectl matching K8s version
     curl -Lo /usr/local/bin/kubectl "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
     chmod +x /usr/local/bin/kubectl
 
@@ -207,36 +217,59 @@ create_kind_cluster() {
         fi
     fi
 
-    # Create Kind cluster config with ImageVolume feature gate
+    # Create Kind cluster config
+    # K8s 1.35: ImageVolume requires feature gate
     cat > /tmp/kind-config-aiagent.yaml <<EOF
 # Kind Cluster Configuration for AIAgent E2E Tests
-# Kubernetes ${K8S_VERSION} with ImageVolume feature gate enabled
+# Kind v${KIND_VERSION} + K8s ${K8S_VERSION}
+# ImageVolume feature gate enabled
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ${KIND_CLUSTER_NAME}
+featureGates:
+  ImageVolume: true
 nodes:
 - role: control-plane
   image: kindest/node:${K8S_VERSION}
-  kubeadmConfigPatches:
+  kubeadmConfigPatchesJSON:
   - |
-    kind: ClusterConfiguration
-    featureGates:
-      ImageVolume: true
-    apiServer:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
-    controllerManager:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
-    scheduler:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
+    {
+      "kind": "ClusterConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
+  - |
+    {
+      "kind": "InitConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
 - role: worker
   image: kindest/node:${K8S_VERSION}
+  kubeadmConfigPatchesJSON:
+  - |
+    {
+      "kind": "JoinConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
 - role: worker
   image: kindest/node:${K8S_VERSION}
-featureGates:
-  ImageVolume: true
+  kubeadmConfigPatchesJSON:
+  - |
+    {
+      "kind": "JoinConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
 EOF
 
     echo ">>> Creating Kind cluster..."
@@ -327,6 +360,8 @@ verify_adk_shared() {
     echo "    [Verify] ADK Shared Mode..."
     echo "    ----------------------------------------"
 
+    POD_NAME="adk-shared-runtime-runtime"
+
     # Check AgentRuntime is running
     RUNTIME_STATUS=$(kubectl get agentruntime adk-shared-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$RUNTIME_STATUS" != "Running" ]; then
@@ -344,7 +379,6 @@ verify_adk_shared() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check Pod structure
-    POD_NAME="adk-shared-runtime-runtime"
     POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
@@ -352,13 +386,21 @@ verify_adk_shared() {
     fi
     echo "    ✓ Pod phase: Running"
 
-    # Check ImageVolume
+    # Check ImageVolume (K8s 1.35+ format)
     IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
     if [ "$IMAGE_VOLUME" == "" ]; then
         echo "    ❌ ERROR: ImageVolume not configured"
         return 1
     fi
     echo "    ✓ ImageVolume configured: ${IMAGE_VOLUME}"
+
+    # Check ImageVolume.PullPolicy
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    if [ "$PULL_POLICY" != "IfNotPresent" ]; then
+        echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent', got '${PULL_POLICY}'"
+        return 1
+    fi
+    echo "    ✓ ImageVolume pullPolicy: IfNotPresent"
 
     # Check DUMMY Framework container
     FW_CMD=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.containers[?(@.name=="agent-framework")].command[0]}' 2>/dev/null)
@@ -386,6 +428,8 @@ verify_adk_isolated() {
     echo "    [Verify] ADK Isolated Mode..."
     echo "    ----------------------------------------"
 
+    POD_NAME="adk-isolated-runtime-runtime"
+
     # Check AgentRuntime is running
     RUNTIME_STATUS=$(kubectl get agentruntime adk-isolated-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$RUNTIME_STATUS" != "Running" ]; then
@@ -403,7 +447,6 @@ verify_adk_isolated() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check Pod
-    POD_NAME="adk-isolated-runtime-runtime"
     POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
@@ -419,6 +462,14 @@ verify_adk_isolated() {
     fi
     echo "    ✓ ImageVolume configured"
 
+    # Check ImageVolume.PullPolicy
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    if [ "$PULL_POLICY" != "IfNotPresent" ]; then
+        echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent'"
+        return 1
+    fi
+    echo "    ✓ ImageVolume pullPolicy: IfNotPresent"
+
     echo "    ----------------------------------------"
     echo "    ✅ ADK Isolated Mode: PASS"
     return 0
@@ -428,6 +479,8 @@ verify_openclaw() {
     echo ""
     echo "    [Verify] OpenClaw Multiple Gateway Mode..."
     echo "    ----------------------------------------"
+
+    POD_NAME="openclaw-runtime-runtime"
 
     # Check AgentRuntime is running
     RUNTIME_STATUS=$(kubectl get agentruntime openclaw-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
@@ -455,7 +508,6 @@ verify_openclaw() {
     echo "    ✓ AIAgent names: OpenClaw-1, OpenClaw-2"
 
     # Check Pod
-    POD_NAME="openclaw-runtime-runtime"
     POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
@@ -470,6 +522,14 @@ verify_openclaw() {
         return 1
     fi
     echo "    ✓ ImageVolume configured"
+
+    # Check ImageVolume.PullPolicy
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    if [ "$PULL_POLICY" != "IfNotPresent" ]; then
+        echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent'"
+        return 1
+    fi
+    echo "    ✓ ImageVolume pullPolicy: IfNotPresent"
 
     echo "    ----------------------------------------"
     echo "    ✅ OpenClaw Multiple Gateway Mode: PASS"

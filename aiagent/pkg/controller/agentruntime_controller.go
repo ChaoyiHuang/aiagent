@@ -460,11 +460,18 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 
 	// ImageVolume: Mount Framework image content to Handler Container
 	// This allows Handler to access Framework's filesystem and start Framework processes
+	// K8s 1.36+ ImageVolume format:
+	//   volumes:
+	//   - name: framework-image
+	//     image:
+	//       reference: aiagent/framework:test
+	//       pullPolicy: IfNotPresent
 	frameworkImageVolume := corev1.Volume{
 		Name: "framework-image",
 		VolumeSource: corev1.VolumeSource{
 			Image: &corev1.ImageVolumeSource{
-				Reference: runtime.Spec.AgentFramework.Image,
+				Reference:  runtime.Spec.AgentFramework.Image,
+				PullPolicy: corev1.PullIfNotPresent,
 			},
 		},
 	}

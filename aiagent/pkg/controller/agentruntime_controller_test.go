@@ -234,13 +234,16 @@ func TestAgentRuntimeReconciler_BuildPodSpec(t *testing.T) {
 		t.Errorf("expected RestartPolicyAlways")
 	}
 
-	// Verify ImageVolume for framework
+	// Verify ImageVolume for framework (K8s 1.36+ format)
 	imageVolumeFound := false
 	for _, vol := range podSpec.Volumes {
 		if vol.Name == "framework-image" && vol.Image != nil {
 			imageVolumeFound = true
 			if vol.Image.Reference != "framework:v1" {
 				t.Errorf("expected ImageVolume reference 'framework:v1', got %s", vol.Image.Reference)
+			}
+			if vol.Image.PullPolicy != corev1.PullIfNotPresent {
+				t.Errorf("expected ImageVolume PullPolicy 'IfNotPresent', got %s", vol.Image.PullPolicy)
 			}
 		}
 	}

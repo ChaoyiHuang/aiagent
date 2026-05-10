@@ -1,28 +1,50 @@
 # Kind Cluster Configuration for AIAgent E2E Tests
-# Kubernetes 1.35+ required for ImageVolume feature
+# Kind v0.31.0 + Kubernetes v1.35.0
+# ImageVolume feature gate enabled
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: aiagent-test
+featureGates:
+  ImageVolume: true
 nodes:
 - role: control-plane
   image: kindest/node:v1.35.0
-  kubeadmConfigPatches:
+  kubeadmConfigPatchesJSON:
   - |
-    kind: ClusterConfiguration
-    featureGates:
-      ImageVolume: true
-    apiServer:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
-    controllerManager:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
-    scheduler:
-      extraArgs:
-        feature-gates: "ImageVolume=true"
+    {
+      "kind": "ClusterConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
+  - |
+    {
+      "kind": "InitConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
 - role: worker
   image: kindest/node:v1.35.0
+  kubeadmConfigPatchesJSON:
+  - |
+    {
+      "kind": "JoinConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
 - role: worker
   image: kindest/node:v1.35.0
-featureGates:
-  ImageVolume: true
+  kubeadmConfigPatchesJSON:
+  - |
+    {
+      "kind": "JoinConfiguration",
+      "apiVersion": "kubeadm.k8s.io/v1beta4",
+      "featureGates": {
+        "ImageVolume": true
+      }
+    }
