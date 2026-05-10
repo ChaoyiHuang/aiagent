@@ -9,7 +9,7 @@ featureGates:
 nodes:
 - role: control-plane
   image: kindest/node:v1.35.0
-  kubeadmConfigPatchesJSON:
+  kubeadmConfigPatches:
   - |
     {
       "kind": "ClusterConfiguration",
@@ -28,7 +28,7 @@ nodes:
     }
 - role: worker
   image: kindest/node:v1.35.0
-  kubeadmConfigPatchesJSON:
+  kubeadmConfigPatches:
   - |
     {
       "kind": "JoinConfiguration",
@@ -39,7 +39,7 @@ nodes:
     }
 - role: worker
   image: kindest/node:v1.35.0
-  kubeadmConfigPatchesJSON:
+  kubeadmConfigPatches:
   - |
     {
       "kind": "JoinConfiguration",
