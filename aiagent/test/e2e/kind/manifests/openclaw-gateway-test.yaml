@@ -6,11 +6,11 @@
 # │    - Starts Gateway process for each AIAgent                    │
 # │    - Each Gateway manages same internal agents                  │
 # │                                                                 │
-# │  Gateway Process #1 (AIAgent: OpenClaw-1)                      │
+# │  Gateway Process #1 (AIAgent: openclaw-1)                      │
 # │    Port: 18789                                                  │
 # │    Internal agents: weather, calculator, assistant (invisible) │
 # │                                                                 │
-# │  Gateway Process #2 (AIAgent: OpenClaw-2)                      │
+# │  Gateway Process #2 (AIAgent: openclaw-2)                      │
 # │    Port: 18790                                                  │
 # │    Internal agents: weather, calculator, assistant (invisible) │
 # │                                                                 │
@@ -19,7 +19,7 @@
 # │    - ImageVolume provides OpenClaw v2026.3.8                    │
 # └─────────────────────────────────────────────────────────────────┘
 #
-# Kubernetes sees 2 AIAgent CRDs (OpenClaw-1, OpenClaw-2)
+# Kubernetes sees 2 AIAgent CRDs (openclaw-1, openclaw-2)
 # Each Gateway's internal agents (weather, calculator, assistant) are identical
 
 ---
@@ -85,13 +85,13 @@ spec:
   replicas: 1
 
 ---
-# AIAgent 1: OpenClaw-1
+# AIAgent 1: openclaw-1
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
-  name: OpenClaw-1
+  name: openclaw-1
   labels:
     runtime: openclaw-runtime
 spec:
@@ -105,13 +105,13 @@ spec:
   # - assistant
 
 ---
-# AIAgent 2: OpenClaw-2
+# AIAgent 2: openclaw-2
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
-  name: OpenClaw-2
+  name: openclaw-2
   labels:
     runtime: openclaw-runtime
 spec:

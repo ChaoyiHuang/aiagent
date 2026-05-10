@@ -687,7 +687,10 @@ func (r *AgentRuntimeReconciler) updateStatusFromPod(ctx context.Context, runtim
 func (r *AgentRuntimeReconciler) updateStatus(ctx context.Context, runtime *v1.AgentRuntime, phase v1.RuntimePhase, message string) {
 	log := log.FromContext(ctx)
 
-	if runtime.Status.Phase != phase {
+	// Always update status if phase is different or if status needs to be initialized
+	needsUpdate := runtime.Status.Phase != phase || runtime.Status.Phase == ""
+
+	if needsUpdate {
 		runtime.Status.Phase = phase
 		log.Info("Updating AgentRuntime status", "phase", phase, "message", message)
 		if err := r.Status().Update(ctx, runtime); err != nil {

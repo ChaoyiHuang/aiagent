@@ -493,19 +493,19 @@ verify_openclaw() {
     # Check exactly 2 AIAgents
     AGENT_COUNT=$(kubectl get aigent -l runtime=openclaw-runtime -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" != 2 ]; then
-        echo "    ❌ ERROR: Expected 2 AIAgent CRDs (OpenClaw-1, OpenClaw-2), got ${AGENT_COUNT}"
+        echo "    ❌ ERROR: Expected 2 AIAgent CRDs (openclaw-1, openclaw-2), got ${AGENT_COUNT}"
         return 1
     fi
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check agent names
-    AGENT_1=$(kubectl get aigent OpenClaw-1 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-    AGENT_2=$(kubectl get aigent OpenClaw-2 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-    if [ "$AGENT_1" != "OpenClaw-1" ] || [ "$AGENT_2" != "OpenClaw-2" ]; then
-        echo "    ❌ ERROR: Expected AIAgent names OpenClaw-1 and OpenClaw-2"
+    AGENT_1=$(kubectl get aigent openclaw-1 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    AGENT_2=$(kubectl get aigent openclaw-2 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    if [ "$AGENT_1" != "openclaw-1" ] || [ "$AGENT_2" != "openclaw-2" ]; then
+        echo "    ❌ ERROR: Expected AIAgent names openclaw-1 and openclaw-2"
         return 1
     fi
-    echo "    ✓ AIAgent names: OpenClaw-1, OpenClaw-2"
+    echo "    ✓ AIAgent names: openclaw-1, openclaw-2"
 
     # Check Pod
     POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
@@ -550,7 +550,11 @@ run_tests() {
     echo ">>> Test 1: ADK Shared Process Mode"
     echo "    (Multiple AIAgent CRDs → Single Framework Process)"
     kubectl apply -f "${SCRIPT_DIR}/manifests/adk-shared-test.yaml"
-    sleep 30
+
+    # Wait for AgentRuntime to be processed by controller
+    echo "    Waiting for AgentRuntime to be ready..."
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-shared-runtime --timeout=120s || true
+    sleep 10
 
     if verify_adk_shared; then
         TEST_PASS=$((TEST_PASS + 1))
@@ -563,7 +567,11 @@ run_tests() {
     echo ">>> Test 2: ADK Isolated Process Mode"
     echo "    (Each AIAgent CRD → Separate Framework Process)"
     kubectl apply -f "${SCRIPT_DIR}/manifests/adk-isolated-test.yaml"
-    sleep 30
+
+    # Wait for AgentRuntime to be processed by controller
+    echo "    Waiting for AgentRuntime to be ready..."
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-isolated-runtime --timeout=120s || true
+    sleep 10
 
     if verify_adk_isolated; then
         TEST_PASS=$((TEST_PASS + 1))
@@ -576,7 +584,11 @@ run_tests() {
     echo ">>> Test 3: OpenClaw Multiple Gateway Mode"
     echo "    (Each AIAgent CRD → Gateway Process with internal agents)"
     kubectl apply -f "${SCRIPT_DIR}/manifests/openclaw-gateway-test.yaml"
-    sleep 30
+
+    # Wait for AgentRuntime to be processed by controller
+    echo "    Waiting for AgentRuntime to be ready..."
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/openclaw-runtime --timeout=120s || true
+    sleep 10
 
     if verify_openclaw; then
         TEST_PASS=$((TEST_PASS + 1))

@@ -56,6 +56,9 @@ type AgentRuntimeSpec struct {
 	// Tolerations for node taints.
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
+	// ServiceAccountName is the name of the ServiceAccount to use for the Pod.
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
 	// Resources defines resource requirements for the Pod.
 	Resources *RuntimeResources `json:"resources,omitempty"`
 
