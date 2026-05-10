@@ -36,11 +36,14 @@ spec:
                 enum:
                 - model
                 - mcp
-                - memory
-                - sandbox
                 - skills
                 - knowledge
+                - memory
                 - state
+                - guardrail
+                - security
+                - policy
+                - sandbox
               model:
                 type: object
                 properties:
@@ -80,7 +83,7 @@ spec:
               mcp:
                 type: object
                 properties:
-                  serverType:
+                  registryType:
                     type: string
                   endpoint:
                     type: string
@@ -91,52 +94,25 @@ spec:
                         type: string
                       key:
                         type: string
-                  capabilities:
+                  servers:
                     type: array
                     items:
-                      type: string
-              memory:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                    - inmemory
-                    - redis
-                    - file
-                  endpoint:
-                    type: string
-                  ttl:
-                    type: integer
-                  maxSize:
-                    type: integer
-              sandbox:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                    - gvisor
-                    - firecracker
-                    - container
-                  mode:
-                    type: string
-                    enum:
-                    - embedded
-                    - external
-                  endpoint:
-                    type: string
-                  timeout:
-                    type: integer
-                  resources:
-                    type: object
-                    properties:
-                      cpuLimit:
-                        type: string
-                      memoryLimit:
-                        type: string
-                      workspaceSize:
-                        type: string
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        type:
+                          type: string
+                        endpoint:
+                          type: string
+                        command:
+                          type: string
+                        args:
+                          type: array
+                          items:
+                            type: string
+                        allowed:
+                          type: boolean
               skills:
                 type: object
                 properties:
@@ -162,6 +138,8 @@ spec:
                           type: string
                         allowed:
                           type: boolean
+                        path:
+                          type: string
               knowledge:
                 type: object
                 properties:
@@ -173,6 +151,22 @@ spec:
                     type: array
                     items:
                       type: string
+              memory:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                    - inmemory
+                    - redis
+                    - file
+                    - postgres
+                  endpoint:
+                    type: string
+                  ttl:
+                    type: integer
+                  persistenceEnabled:
+                    type: boolean
               state:
                 type: object
                 properties:
@@ -186,6 +180,79 @@ spec:
                     type: string
                   persistent:
                     type: boolean
+              guardrail:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        type:
+                          type: string
+                        config:
+                          type: object
+                          additionalProperties:
+                            type: string
+              security:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        type:
+                          type: string
+                        config:
+                          type: object
+                          additionalProperties:
+                            type: string
+              policy:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        type:
+                          type: string
+                        config:
+                          type: object
+                          additionalProperties:
+                            type: string
+              sandbox:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                    - gvisor
+                    - firecracker
+                    - container
+                  mode:
+                    type: string
+                    enum:
+                    - embedded
+                    - external
+                  endpoint:
+                    type: string
+                  timeout:
+                    type: integer
+                  resources:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
           status:
             type: object
             properties:

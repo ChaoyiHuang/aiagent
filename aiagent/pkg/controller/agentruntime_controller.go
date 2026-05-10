@@ -492,6 +492,20 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 		handlerVolumeMounts,
 	)
 
+	// Add processMode env var from CRD spec if specified
+	if runtime.Spec.ProcessMode != "" {
+		handlerContainer.Env = append(handlerContainer.Env, corev1.EnvVar{
+			Name:  "PROCESS_MODE",
+			Value: string(runtime.Spec.ProcessMode),
+		})
+	}
+
+	// Add framework type env var for handler to identify framework
+	handlerContainer.Env = append(handlerContainer.Env, corev1.EnvVar{
+		Name:  "FRAMEWORK_TYPE",
+		Value: runtime.Spec.AgentFramework.Type,
+	})
+
 	// Build Framework container as DUMMY container (pause process only)
 	// It provides the image content for ImageVolume, but does not run Framework processes
 	// Handler Container is the process manager that starts/stops Framework processes
@@ -502,6 +516,7 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 
 	return corev1.PodSpec{
 		ShareProcessNamespace: boolPtr(true),
+		ServiceAccountName:    runtime.Spec.ServiceAccountName,
 		Containers:            []corev1.Container{handlerContainer, frameworkContainer},
 		Volumes:               volumes,
 		NodeSelector:          runtime.Spec.NodeSelector,

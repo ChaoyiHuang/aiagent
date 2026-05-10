@@ -94,8 +94,8 @@ type AgentFrameworkSpec struct {
 	// Version is the image version/tag.
 	Version string `json:"version,omitempty"`
 
-	// Type identifies the framework type.
-	// +kubebuilder:validation:Enum=adk;openclaw;langchain;semantic-kernel;custom
+	// Type identifies the framework type (e.g., adk, openclaw, langchain, or any custom framework).
+	// No enum restriction - supports any framework type.
 	Type string `json:"type"`
 
 	// Command overrides the container entrypoint.

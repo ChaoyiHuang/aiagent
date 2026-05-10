@@ -39,6 +39,8 @@ spec:
                 properties:
                   image:
                     type: string
+                  version:
+                    type: string
                   imagePullPolicy:
                     type: string
                     enum:
@@ -70,6 +72,11 @@ spec:
                                 name:
                                   type: string
                                 key:
+                                  type: string
+                            fieldRef:
+                              type: object
+                              properties:
+                                fieldPath:
                                   type: string
                   resources:
                     type: object
@@ -109,12 +116,11 @@ spec:
                 properties:
                   image:
                     type: string
+                  version:
+                    type: string
                   type:
                     type: string
-                    enum:
-                    - adk-go
-                    - openclaw
-                    - langchain
+                    # No enum restriction - supports any framework type
                   config:
                     type: object
                     additionalProperties:
@@ -123,10 +129,36 @@ spec:
                     type: array
                     items:
                       type: string
+                  command:
+                    type: array
+                    items:
+                      type: string
+                  env:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        value:
+                          type: string
+                  resources:
+                    type: object
+                    properties:
+                      limits:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      requests:
+                        type: object
+                        additionalProperties:
+                          type: string
               harness:
                 type: array
                 items:
                   type: object
+                  required:
+                  - name
                   properties:
                     name:
                       type: string
@@ -143,6 +175,8 @@ spec:
                       type: string
                     configMapRef:
                       type: string
+                    secretRef:
+                      type: string
                     optional:
                       type: boolean
               sandboxTemplateRef:
@@ -150,6 +184,7 @@ spec:
               replicas:
                 type: integer
                 default: 1
+                minimum: 1
               nodeSelector:
                 type: object
                 additionalProperties:
@@ -169,6 +204,23 @@ spec:
                   type: object
               serviceAccountName:
                 type: string
+              resources:
+                type: object
+                properties:
+                  limits:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  requests:
+                    type: object
+                    additionalProperties:
+                      type: string
+              processMode:
+                type: string
+                enum:
+                - shared
+                - isolated
+                default: isolated
           status:
             type: object
             properties:
@@ -176,10 +228,11 @@ spec:
                 type: string
                 enum:
                 - Pending
-                - Initializing
+                - Creating
                 - Running
-                - Error
-                - Terminated
+                - Updating
+                - Terminating
+                - Failed
               podIPs:
                 type: array
                 items:
@@ -192,17 +245,28 @@ spec:
                 type: array
                 items:
                   type: object
+                  required:
+                  - name
+                  - namespace
                   properties:
                     name:
                       type: string
-                    agentID:
+                    uid:
+                      type: string
+                    namespace:
                       type: string
                     phase:
                       type: string
+                    boundAt:
+                      type: string
+                      format: date-time
               conditions:
                 type: array
                 items:
                   type: object
+                  required:
+                  - type
+                  - status
                   properties:
                     type:
                       type: string
@@ -215,6 +279,8 @@ spec:
                       type: string
                     message:
                       type: string
+              frameworkID:
+                type: string
               lastAgentSyncTime:
                 type: string
                 format: date-time

@@ -37,7 +37,6 @@ kind: AgentRuntime
 metadata:
   name: adk-shared-runtime
 spec:
-  # ProcessMode: shared - single process for all agents
   processMode: shared
 
   agentHandler:
@@ -66,6 +65,7 @@ metadata:
 spec:
   description: "First agent in shared process mode"
   runtimeRef:
+    type: adk
     name: adk-shared-runtime
 
 ---
@@ -79,4 +79,5 @@ metadata:
 spec:
   description: "Second agent in shared process mode"
   runtimeRef:
+    type: adk
     name: adk-shared-runtime

@@ -39,7 +39,6 @@ kind: AgentRuntime
 metadata:
   name: adk-isolated-runtime
 spec:
-  # ProcessMode: isolated - one process per agent
   processMode: isolated
 
   agentHandler:
@@ -68,6 +67,7 @@ metadata:
 spec:
   description: "First agent with isolated process"
   runtimeRef:
+    type: adk
     name: adk-isolated-runtime
 
 ---
@@ -81,6 +81,7 @@ metadata:
 spec:
   description: "Second agent with isolated process"
   runtimeRef:
+    type: adk
     name: adk-isolated-runtime
 
 ---
@@ -94,4 +95,5 @@ metadata:
 spec:
   description: "Third agent with isolated process"
   runtimeRef:
+    type: adk
     name: adk-isolated-runtime

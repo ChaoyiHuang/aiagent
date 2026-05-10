@@ -35,17 +35,12 @@ spec:
             properties:
               runtimeRef:
                 type: object
-                required:
-                - type
                 properties:
-                  name:
-                    type: string
                   type:
                     type: string
-                    enum:
-                    - adk-go
-                    - openclaw
-                    - langchain
+                    # No enum restriction - supports any framework type
+                  name:
+                    type: string
               harnessOverride:
                 type: object
                 properties:
@@ -53,6 +48,8 @@ spec:
                     type: array
                     items:
                       type: object
+                      required:
+                      - name
                       properties:
                         name:
                           type: string
@@ -60,37 +57,59 @@ spec:
                           type: array
                           items:
                             type: string
+                        deniedModels:
+                          type: array
+                          items:
+                            type: string
+                        deny:
+                          type: boolean
                   mcp:
                     type: array
                     items:
                       type: object
+                      required:
+                      - name
                       properties:
                         name:
                           type: string
-                        disabledCapabilities:
+                        allowedServers:
                           type: array
                           items:
                             type: string
+                        deniedServers:
+                          type: array
+                          items:
+                            type: string
+                        deny:
+                          type: boolean
                   memory:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      ttlOverride:
-                        type: integer
-                  sandbox:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      extraPrivileges:
-                        type: array
-                        items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - name
+                      properties:
+                        name:
                           type: string
+                        config:
+                          type: object
+                  sandbox:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - name
+                      properties:
+                        name:
+                          type: string
+                        deny:
+                          type: boolean
                   skills:
                     type: array
                     items:
                       type: object
+                      required:
+                      - name
                       properties:
                         name:
                           type: string
@@ -98,17 +117,29 @@ spec:
                           type: array
                           items:
                             type: string
+                        deniedSkills:
+                          type: array
+                          items:
+                            type: string
               agentConfig:
                 type: array
                 items:
                   type: object
+                  required:
+                  - name
                   properties:
                     name:
                       type: string
                     configMapRef:
-                      type: string
-                    mountPath:
-                      type: string
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                    secretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
               volumePolicy:
                 type: string
                 enum:
@@ -117,44 +148,6 @@ spec:
                 default: retain
               description:
                 type: string
-              agentType:
-                type: string
-                enum:
-                - llm
-                - sequential
-                - parallel
-                - loop
-                - custom
-                default: llm
-              tools:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    enabled:
-                      type: boolean
-              subAgents:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-              migrationPolicy:
-                type: object
-                properties:
-                  allowMigration:
-                    type: boolean
-                    default: false
-                  targetRuntime:
-                    type: string
-                  preserveState:
-                    type: boolean
-                    default: true
           status:
             type: object
             properties:
@@ -163,10 +156,9 @@ spec:
                 enum:
                 - Pending
                 - Scheduling
-                - Initializing
                 - Running
                 - Migrating
-                - Error
+                - Failed
                 - Terminated
               runtimeRef:
                 type: object
@@ -181,6 +173,9 @@ spec:
                 type: array
                 items:
                   type: object
+                  required:
+                  - type
+                  - status
                   properties:
                     type:
                       type: string
@@ -193,12 +188,5 @@ spec:
                       type: string
                     message:
                       type: string
-              lastActiveTime:
-                type: string
-                format: date-time
-              sessionCount:
-                type: integer
-              message:
-                type: string
     subresources:
       status: {}

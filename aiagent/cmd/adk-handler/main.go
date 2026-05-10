@@ -66,10 +66,19 @@ func main() {
 		}
 	}
 
+	// Get process mode from environment
+	// Values: "shared" (single process multi-agent) or "isolated" (one process per agent)
+	processMode := handler.ProcessModeIsolated // default
+	if pm := os.Getenv("PROCESS_MODE"); pm != "" {
+		processMode = handler.ProcessModeType(pm)
+		log.Printf("Process Mode from env: %s", pm)
+	}
+
 	log.Printf("ADK Handler starting...")
 	log.Printf("Framework Binary: %s", fwBin)
 	log.Printf("Work Directory: %s", wd)
 	log.Printf("Config Directory: %s", cfgDir)
+	log.Printf("Process Mode: %s", processMode)
 
 	// Verify framework binary exists (ImageVolume should provide it)
 	if _, err := os.Stat(fwBin); err != nil {
@@ -83,6 +92,7 @@ func main() {
 		WorkDir:      wd,
 		ConfigDir:    cfgDir,
 		DebugMode:    *debug,
+		ProcessMode:  processMode,
 	}
 
 	// Create ADK Handler

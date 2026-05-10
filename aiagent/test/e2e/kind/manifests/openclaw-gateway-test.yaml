@@ -66,8 +66,7 @@ kind: AgentRuntime
 metadata:
   name: openclaw-runtime
 spec:
-  # ProcessMode: isolated - one Gateway per AIAgent
-  processMode: isolated
+  # OpenClaw runs in gateway mode (each AIAgent gets its own Gateway instance)
 
   agentHandler:
     image: aiagent/openclaw-handler:test
@@ -98,6 +97,7 @@ metadata:
 spec:
   description: "OpenClaw Gateway instance 1"
   runtimeRef:
+    type: openclaw
     name: openclaw-runtime
   # Internal agents defined in openclaw.json (same for all instances):
   # - weather
@@ -117,6 +117,7 @@ metadata:
 spec:
   description: "OpenClaw Gateway instance 2"
   runtimeRef:
+    type: openclaw
     name: openclaw-runtime
   # Internal agents defined in openclaw.json (same for all instances):
   # - weather

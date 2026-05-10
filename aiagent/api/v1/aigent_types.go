@@ -50,7 +50,7 @@ type AIAgentSpec struct {
 type RuntimeReference struct {
 	// Type specifies the agent framework type for automatic scheduling.
 	// The controller will find a matching AgentRuntime.
-	// +kubebuilder:validation:Enum=adk;openclaw;langchain;semantic-kernel;custom
+	// No enum restriction - supports any framework type (e.g., adk, openclaw, langchain, or custom).
 	Type string `json:"type,omitempty"`
 
 	// Name specifies a specific AgentRuntime instance for fixed binding.
