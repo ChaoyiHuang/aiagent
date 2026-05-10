@@ -24,7 +24,7 @@
 
 ---
 # Harness for Model
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: openclaw-model
@@ -40,7 +40,7 @@ spec:
 
 ---
 # Harness for Skills
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: openclaw-skills
@@ -61,7 +61,7 @@ spec:
 
 ---
 # AgentRuntime for OpenClaw (Multiple Gateway Mode)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: openclaw-runtime
@@ -89,7 +89,7 @@ spec:
 # AIAgent 1: OpenClaw-1
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: OpenClaw-1
@@ -108,7 +108,7 @@ spec:
 # AIAgent 2: OpenClaw-2
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: OpenClaw-2

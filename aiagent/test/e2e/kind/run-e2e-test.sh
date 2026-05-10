@@ -325,7 +325,7 @@ install_crds() {
 
     echo ">>> CRDs installed successfully!"
 
-    kubectl get crd | grep aiagent
+    kubectl get crd | grep agent
 }
 
 deploy_manager() {
@@ -633,7 +633,7 @@ show_status() {
 
     echo ""
     echo ">>> CRDs:"
-    kubectl get crd | grep aiagent || echo "    No aiagent CRDs found"
+    kubectl get crd | grep agent || echo "    No agent CRDs found"
 
     echo ""
     echo ">>> Manager Pod:"

@@ -14,7 +14,7 @@
 
 ---
 # Harness for Model
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: adk-shared-model
@@ -32,7 +32,7 @@ spec:
 
 ---
 # AgentRuntime for ADK Shared Mode
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: adk-shared-runtime
@@ -57,7 +57,7 @@ spec:
 
 ---
 # AIAgent 1
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: shared-agent-1
@@ -70,7 +70,7 @@ spec:
 
 ---
 # AIAgent 2
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: shared-agent-2

@@ -16,7 +16,7 @@
 
 ---
 # Harness for Model
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: adk-isolated-model
@@ -34,7 +34,7 @@ spec:
 
 ---
 # AgentRuntime for ADK Isolated Mode
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: adk-isolated-runtime
@@ -59,7 +59,7 @@ spec:
 
 ---
 # AIAgent 1 (gets its own Framework process)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: isolated-agent-1
@@ -72,7 +72,7 @@ spec:
 
 ---
 # AIAgent 2 (gets its own Framework process)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: isolated-agent-2
@@ -85,7 +85,7 @@ spec:
 
 ---
 # AIAgent 3 (gets its own Framework process)
-apiVersion: aiagent.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: isolated-agent-3
