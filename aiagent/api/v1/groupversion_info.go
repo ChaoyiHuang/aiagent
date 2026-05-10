@@ -1,6 +1,6 @@
-// Package v1 contains API Schema definitions for the ai.k8s.io API group.
+// Package v1 contains API Schema definitions for the agent.ai API group.
 // +k8s:deepcopy-gen=package
-// +groupName=ai.k8s.io
+// +groupName=agent.ai
 package v1
 
 import (
@@ -10,7 +10,7 @@ import (
 
 var (
 	// GroupVersion is the group version for the AI API.
-	GroupVersion = schema.GroupVersion{Group: "ai.k8s.io", Version: "v1"}
+	GroupVersion = schema.GroupVersion{Group: "agent.ai", Version: "v1"}
 
 	// SchemeBuilder creates a Scheme that registers the types for this API group.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

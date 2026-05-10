@@ -210,9 +210,9 @@ func waitForCRDs(ctx context.Context, config *rest.Config) error {
 		version  string
 		resource string
 	}{
-		{"ai.k8s.io", "v1", "harnesses"},
-		{"ai.k8s.io", "v1", "agentruntimes"},
-		{"ai.k8s.io", "v1", "aigents"},
+		{"agent.ai", "v1", "harnesses"},
+		{"agent.ai", "v1", "agentruntimes"},
+		{"agent.ai", "v1", "aigents"},
 	}
 
 	for i := 0; i < 30; i++ {

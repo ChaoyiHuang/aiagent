@@ -244,8 +244,8 @@ func TestHarnessSpec_SandboxType(t *testing.T) {
 }
 
 func TestGroupVersion(t *testing.T) {
-	if GroupVersion.Group != "ai.k8s.io" {
-		t.Errorf("expected group 'ai.k8s.io', got '%s'", GroupVersion.Group)
+	if GroupVersion.Group != "agent.ai" {
+		t.Errorf("expected group 'agent.ai', got '%s'", GroupVersion.Group)
 	}
 
 	if GroupVersion.Version != "v1" {
@@ -256,8 +256,8 @@ func TestGroupVersion(t *testing.T) {
 func TestResource(t *testing.T) {
 	gr := Resource("aiagents")
 
-	if gr.Group != "ai.k8s.io" {
-		t.Errorf("expected group 'ai.k8s.io', got '%s'", gr.Group)
+	if gr.Group != "agent.ai" {
+		t.Errorf("expected group 'agent.ai', got '%s'", gr.Group)
 	}
 
 	if gr.Resource != "aiagents" {

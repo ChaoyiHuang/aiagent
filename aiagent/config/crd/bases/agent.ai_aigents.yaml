@@ -1,0 +1,204 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: aigents.agent.ai
+spec:
+  group: agent.ai
+  names:
+    kind: AIAgent
+    listKind: AIAgentList
+    plural: aigents
+    singular: aigent
+    shortNames:
+    - agent
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+            - runtimeRef
+            properties:
+              runtimeRef:
+                type: object
+                required:
+                - type
+                properties:
+                  name:
+                    type: string
+                  type:
+                    type: string
+                    enum:
+                    - adk-go
+                    - openclaw
+                    - langchain
+              harnessOverride:
+                type: object
+                properties:
+                  model:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        allowedModels:
+                          type: array
+                          items:
+                            type: string
+                  mcp:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        disabledCapabilities:
+                          type: array
+                          items:
+                            type: string
+                  memory:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      ttlOverride:
+                        type: integer
+                  sandbox:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      extraPrivileges:
+                        type: array
+                        items:
+                          type: string
+                  skills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        allowedSkills:
+                          type: array
+                          items:
+                            type: string
+              agentConfig:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    configMapRef:
+                      type: string
+                    mountPath:
+                      type: string
+              volumePolicy:
+                type: string
+                enum:
+                - retain
+                - delete
+                default: retain
+              description:
+                type: string
+              agentType:
+                type: string
+                enum:
+                - llm
+                - sequential
+                - parallel
+                - loop
+                - custom
+                default: llm
+              tools:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    enabled:
+                      type: boolean
+              subAgents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+              migrationPolicy:
+                type: object
+                properties:
+                  allowMigration:
+                    type: boolean
+                    default: false
+                  targetRuntime:
+                    type: string
+                  preserveState:
+                    type: boolean
+                    default: true
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum:
+                - Pending
+                - Scheduling
+                - Initializing
+                - Running
+                - Migrating
+                - Error
+                - Terminated
+              runtimeRef:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  uid:
+                    type: string
+              agentID:
+                type: string
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    reason:
+                      type: string
+                    message:
+                      type: string
+              lastActiveTime:
+                type: string
+                format: date-time
+              sessionCount:
+                type: integer
+              message:
+                type: string
+    subresources:
+      status: {}

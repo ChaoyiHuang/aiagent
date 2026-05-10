@@ -1,5 +1,5 @@
 # Sample AIAgent using ADK-Go framework
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: adk-agent-sample
@@ -27,7 +27,7 @@ spec:
     enabled: true
 ---
 # Sample AIAgent using OpenClaw framework
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: openclaw-agent-sample
@@ -41,7 +41,7 @@ spec:
   agentType: llm
 ---
 # Sample Sequential AIAgent with sub-agents
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: sequential-agent-sample

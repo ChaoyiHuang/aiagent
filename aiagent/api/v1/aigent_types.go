@@ -1,6 +1,6 @@
 // Package v1 contains API Schema definitions for the AI Agent abstraction.
 // +k8s:deepcopy-gen=package
-// +groupName=ai.k8s.io
+// +groupName=agent.ai
 package v1
 
 import (

@@ -1,5 +1,5 @@
 # Sample Model Harness for DeepSeek
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: model-harness-deepseek
@@ -26,7 +26,7 @@ spec:
       tokensPerMinute: 100000
 ---
 # Sample Memory Harness
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: memory-harness-inmemory
@@ -39,7 +39,7 @@ spec:
     maxSize: 1048576
 ---
 # Sample Sandbox Harness
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: sandbox-harness-gvisor
@@ -56,7 +56,7 @@ spec:
       workspaceSize: "1Gi"
 ---
 # Sample Skills Harness
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: skills-harness-local

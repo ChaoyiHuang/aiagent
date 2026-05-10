@@ -13,10 +13,10 @@
 # │                                                                 │
 # │  Starts Framework:                                              │
 # │    exec.Command("/framework-rootfs/usr/local/bin/openclaw")     │
-// │                                                                 │
-// │  Framework processes run in same Pod's PID namespace            │
-// │  Handler controls lifecycle (start/stop/monitor)               │
-// └─────────────────────────────────────────────────────────────────┘
+# │                                                                 │
+# │  Framework processes run in same Pod's PID namespace            │
+# │  Handler controls lifecycle (start/stop/monitor)               │
+# └─────────────────────────────────────────────────────────────────┘
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /workspace

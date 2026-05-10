@@ -1,7 +1,7 @@
 # Sample AgentRuntime for ADK-Go framework
 # All framework-specific configuration comes from the spec
 # Controller is framework-agnostic - it just uses spec values
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: adk-runtime-sample
@@ -57,7 +57,7 @@ spec:
 ---
 # Sample AgentRuntime for OpenClaw framework
 # OpenClaw uses Gateway architecture: gateway run + HTTP API communication
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: openclaw-runtime-sample
@@ -109,7 +109,7 @@ spec:
 ---
 # Sample AgentRuntime for Custom framework
 # Demonstrates fully configurable framework-agnostic approach
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: custom-runtime-sample
