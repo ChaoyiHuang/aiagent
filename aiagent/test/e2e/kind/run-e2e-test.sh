@@ -315,13 +315,13 @@ install_crds() {
     # Wait for CRDs to be established
     kubectl wait --for condition=established \
         --timeout=60s \
-        crd/agentruntimes.aiagent.io || true
+        crd/agentruntimes.agent.ai || true
     kubectl wait --for condition=established \
         --timeout=60s \
-        crd/aigents.aiagent.io || true
+        crd/aigents.agent.ai || true
     kubectl wait --for condition=established \
         --timeout=60s \
-        crd/harnesses.aiagent.io || true
+        crd/harnesses.agent.ai || true
 
     echo ">>> CRDs installed successfully!"
 
