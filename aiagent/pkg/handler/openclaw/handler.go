@@ -100,6 +100,16 @@ func (h *OpenClawHandler) GetFrameworkInfo() *handler.FrameworkInfo {
 	return h.BaseHandler.GetFrameworkInfo()
 }
 
+// SetBasePort sets the base Gateway port.
+func (h *OpenClawHandler) SetBasePort(port int) {
+	h.basePort = port
+}
+
+// GetBasePort returns the current base Gateway port.
+func (h *OpenClawHandler) GetBasePort() int {
+	return h.basePort
+}
+
 // ============================================================
 // Core Responsibility #1: Configuration Transformation
 // ============================================================

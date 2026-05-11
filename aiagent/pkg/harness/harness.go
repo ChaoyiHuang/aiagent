@@ -261,6 +261,21 @@ func (m *HarnessManager) GetKnowledgeHarness() *KnowledgeHarness {
 	return m.knowledgeHarness
 }
 
+// GetGuardrailHarness returns the guardrail harness (not implemented).
+func (m *HarnessManager) GetGuardrailHarness() *GuardrailHarness {
+	return nil
+}
+
+// GetSecurityHarness returns the security harness (not implemented).
+func (m *HarnessManager) GetSecurityHarness() *SecurityHarness {
+	return nil
+}
+
+// GetPolicyHarness returns the policy harness (not implemented).
+func (m *HarnessManager) GetPolicyHarness() *PolicyHarness {
+	return nil
+}
+
 // GetHarnessStatus returns the status of a specific harness type.
 func (m *HarnessManager) GetHarnessStatus(hType HarnessType) *HarnessStatus {
 	m.mu.RLock()
@@ -600,3 +615,42 @@ func containsSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// GuardrailRule represents a guardrail rule.
+type GuardrailRule struct {
+	Name   string
+	Type   string
+	Config map[string]any
+}
+
+// SecurityPolicy represents a security policy.
+type SecurityPolicy struct {
+	Name   string
+	Type   string
+	Config map[string]any
+}
+
+// PolicyInfo represents a policy info.
+type PolicyInfo struct {
+	Name   string
+	Type   string
+	Config map[string]any
+}
+
+// GuardrailHarness is a stub implementation for guardrail harness.
+type GuardrailHarness struct{}
+
+func (h *GuardrailHarness) GetRules() []GuardrailRule { return nil }
+func (h *GuardrailHarness) ToFrameworkConfig(frameworkType string) ([]byte, error) { return nil, nil }
+
+// SecurityHarness is a stub implementation for security harness.
+type SecurityHarness struct{}
+
+func (h *SecurityHarness) GetPolicies() []SecurityPolicy { return nil }
+func (h *SecurityHarness) ToFrameworkConfig(frameworkType string) ([]byte, error) { return nil, nil }
+
+// PolicyHarness is a stub implementation for policy harness.
+type PolicyHarness struct{}
+
+func (h *PolicyHarness) GetPolicies() []PolicyInfo { return nil }
+func (h *PolicyHarness) ToFrameworkConfig(frameworkType string) ([]byte, error) { return nil, nil }

@@ -121,7 +121,7 @@ spec:
                           type: array
                           items:
                             type: string
-              agentConfig:
+              agentConfigReferences:
                 type: array
                 items:
                   type: object
@@ -140,6 +140,10 @@ spec:
                       properties:
                         name:
                           type: string
+              agentConfig:
+                type: object
+                description: "Framework-specific configuration in JSON format. The Handler determines the schema and meaning of this configuration."
+                x-kubernetes-preserve-unknown-fields: true
               volumePolicy:
                 type: string
                 enum:

@@ -16,7 +16,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,7 +43,6 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var kubeconfig string
 	var namespace string
 	var leaderElectionID string
 	var webhookPort int
@@ -56,8 +54,6 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&leaderElectionID, "leader-election-id", "aiagent-controller-manager",
 		"The ID to use for leader election.")
-	flag.StringVar(&kubeconfig, "kubeconfig", "",
-		"Path to a kubeconfig. Only required if out-of-cluster.")
 	flag.StringVar(&namespace, "namespace", "",
 		"Namespace to watch. If empty, watches all namespaces.")
 	flag.IntVar(&webhookPort, "webhook-port", 9443,
@@ -71,24 +67,19 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Get Kubernetes config
-	config, err := getConfig(kubeconfig)
-	if err != nil {
-		setupLog.Error(err, "unable to get kubeconfig")
+	// Get Kubernetes config using controller-runtime's GetConfigOrDie
+	// This handles in-cluster config and kubeconfig automatically
+	config := ctrl.GetConfigOrDie()
+
+	// Wait for CRDs to be available (useful when running locally for testing)
+	setupLog.Info("Waiting for CRDs to be available...")
+	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := waitForCRDs(waitCtx, config); err != nil {
+		setupLog.Error(err, "CRDs not available")
 		os.Exit(1)
 	}
-
-	// Wait for CRDs to be available if running outside cluster
-	if kubeconfig != "" {
-		setupLog.Info("Waiting for CRDs to be available...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := waitForCRDs(ctx, config); err != nil {
-			setupLog.Error(err, "CRDs not available")
-			os.Exit(1)
-		}
-		setupLog.Info("CRDs are available")
-	}
+	setupLog.Info("CRDs are available")
 
 	// Create manager options
 	managerOpts := ctrl.Options{
@@ -171,31 +162,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-// getConfig returns the Kubernetes rest.Config
-func getConfig(kubeconfig string) (*rest.Config, error) {
-	if kubeconfig != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfig)
-	}
-
-	// Try in-cluster config first
-	config, err := rest.InClusterConfig()
-	if err == nil {
-		return config, nil
-	}
-
-	// Fallback to default kubeconfig location
-	home := os.Getenv("HOME")
-	if home == "" {
-		home = "/root"
-	}
-	defaultKubeconfig := home + "/.kube/config"
-	if _, err := os.Stat(defaultKubeconfig); err == nil {
-		return clientcmd.BuildConfigFromFlags("", defaultKubeconfig)
-	}
-
-	return nil, fmt.Errorf("no kubeconfig found")
 }
 
 // waitForCRDs waits for CRDs to be available before starting controllers

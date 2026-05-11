@@ -118,6 +118,44 @@ func NewSkillsHarness(spec *v1.SkillsHarnessSpec, sandbox *SandboxHarness) *Skil
 	return harness
 }
 
+// GetSpec returns the skills harness spec.
+func (h *SkillsHarness) GetSpec() *v1.SkillsHarnessSpec {
+	return h.spec
+}
+
+// GetHubType returns the skills hub type.
+func (h *SkillsHarness) GetHubType() string {
+	return h.spec.HubType
+}
+
+// GetEndpoint returns the skills hub endpoint.
+func (h *SkillsHarness) GetEndpoint() string {
+	return h.spec.Endpoint
+}
+
+// GetSkills returns skill info for all allowed skills.
+func (h *SkillsHarness) GetSkills() []SkillInfoLocal {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	skills := []SkillInfoLocal{}
+	for _, skill := range h.skills {
+		skills = append(skills, SkillInfoLocal{
+			Name:    skill.config.Name,
+			Version: skill.config.Version,
+			Allowed: skill.config.Allowed,
+		})
+	}
+	return skills
+}
+
+// SkillInfoLocal represents skill info for harness package.
+type SkillInfoLocal struct {
+	Name    string
+	Version string
+	Allowed bool
+}
+
 // GetSkill returns a skill by name.
 func (h *SkillsHarness) GetSkill(name string) (*Skill, error) {
 	h.mu.RLock()

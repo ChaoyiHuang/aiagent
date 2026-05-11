@@ -118,6 +118,21 @@ func (h *ModelHarness) GetDefaultModel() string {
 	return ""
 }
 
+// GetProvider returns the provider name.
+func (h *ModelHarness) GetProvider() string {
+	return h.spec.Provider
+}
+
+// GetEndpoint returns the API endpoint.
+func (h *ModelHarness) GetEndpoint() string {
+	return h.spec.Endpoint
+}
+
+// GetSpec returns the model harness spec.
+func (h *ModelHarness) GetSpec() *v1.ModelHarnessSpec {
+	return h.spec
+}
+
 // GetAllowedModels returns all allowed models.
 func (h *ModelHarness) GetAllowedModels() []string {
 	h.mu.RLock()

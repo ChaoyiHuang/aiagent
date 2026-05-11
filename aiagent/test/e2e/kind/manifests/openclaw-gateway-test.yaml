@@ -1,8 +1,17 @@
 # Test Case 3: OpenClaw Multiple Gateway Mode (2 个 AIAgent 对应 2 个 Gateway)
-# Architecture:
+# Architecture (Solution M - hostPath + Config Daemon):
 # ┌─────────────────────────────────────────────────────────────────┐
+# │ Config Daemon (DaemonSet on same node)                          │
+# │  - Watches AIAgent CRDs via Informer                            │
+# │  - Writes AgentConfig to hostPath                               │
+# │  - Path: /var/lib/aiagent/configs/<namespace>/<agent-name>/     │
+# │  - Files: agent-config.json, agent-meta.yaml                    │
+# │                                                                 │
 # │ Pod (AgentRuntime)                                              │
+# │  - Mounts hostPath as /etc/agent-config                         │
 # │  Handler Container                                              │
+# │    - Reads agent-index.yaml to discover agents                  │
+# │    - Reads agent-config.json for each agent                     │
 # │    - Starts Gateway process for each AIAgent                    │
 # │    - Each Gateway manages same internal agents                  │
 # │                                                                 │
@@ -85,7 +94,7 @@ spec:
   replicas: 1
 
 ---
-# AIAgent 1: openclaw-1
+# AIAgent 1: openclaw-1 with agentConfig (OpenClaw-specific configuration)
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
 apiVersion: agent.ai/v1
@@ -99,13 +108,31 @@ spec:
   runtimeRef:
     type: openclaw
     name: openclaw-runtime
-  # Internal agents defined in openclaw.json (same for all instances):
-  # - weather
-  # - calculator
-  # - assistant
+  # Framework-specific configuration (OpenClaw JSON format)
+  # This defines the internal agents that Gateway manages
+  agentConfig:
+    gateway:
+      port: 18789
+      host: "0.0.0.0"
+    agents:
+    - name: weather
+      description: "Weather information agent"
+      model: "gpt-4o"
+      tools:
+      - name: get_weather
+        type: api_call
+    - name: calculator
+      description: "Math calculation agent"
+      model: "gpt-4o"
+      tools:
+      - name: calculate
+        type: math
+    - name: assistant
+      description: "General assistant agent"
+      model: "gpt-4o"
 
 ---
-# AIAgent 2: openclaw-2
+# AIAgent 2: openclaw-2 with agentConfig
 # Kubernetes sees this as one Agent
 # Gateway internally manages weather, calculator, assistant (invisible)
 apiVersion: agent.ai/v1
@@ -119,7 +146,23 @@ spec:
   runtimeRef:
     type: openclaw
     name: openclaw-runtime
-  # Internal agents defined in openclaw.json (same for all instances):
-  # - weather
-  # - calculator
-  # - assistant
+  agentConfig:
+    gateway:
+      port: 18790
+      host: "0.0.0.0"
+    agents:
+    - name: weather
+      description: "Weather information agent"
+      model: "gpt-4o"
+      tools:
+      - name: get_weather
+        type: api_call
+    - name: calculator
+      description: "Math calculation agent"
+      model: "gpt-4o"
+      tools:
+      - name: calculate
+        type: math
+    - name: assistant
+      description: "General assistant agent"
+      model: "gpt-4o"

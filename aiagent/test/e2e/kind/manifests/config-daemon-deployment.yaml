@@ -1,0 +1,122 @@
+# Config Daemon Deployment for syncing AIAgent configs to hostPath
+# This DaemonSet watches AIAgent CRDs and writes AgentConfig to hostPath
+# for AgentHandler to read without K8s API calls.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: config-daemon
+  namespace: aiagent-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: config-daemon-clusterrole
+rules:
+# AIAgent permissions (read-only for watching)
+- apiGroups: ["agent.ai"]
+  resources: ["aigents"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["agent.ai"]
+  resources: ["aigents/status"]
+  verbs: ["get", "list", "watch"]
+# Pod permissions (for discovering runtime pods)
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: config-daemon-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: config-daemon-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: config-daemon
+  namespace: aiagent-system
+
+---
+# Config Daemon DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: config-daemon
+  namespace: aiagent-system
+  labels:
+    app: config-daemon
+    component: config-sync
+spec:
+  selector:
+    matchLabels:
+      app: config-daemon
+  template:
+    metadata:
+      labels:
+        app: config-daemon
+        component: config-sync
+    spec:
+      serviceAccountName: config-daemon
+      containers:
+      - name: config-daemon
+        image: aiagent/config-daemon:test
+        imagePullPolicy: IfNotPresent
+        args:
+        - --namespace=$(WATCH_NAMESPACE)
+        - --configpath=/var/lib/aiagent/configs
+        env:
+        - name: WATCH_NAMESPACE
+          value: ""  # Empty means watch all namespaces
+        volumeMounts:
+        - name: agent-configs
+          mountPath: /var/lib/aiagent/configs
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+      volumes:
+      - name: agent-configs
+        hostPath:
+          path: /var/lib/aiagent/configs
+          type: DirectoryOrCreate
+
+---
+# Alternative: Namespace-level DaemonSet (for specific namespace)
+# Use this if you want per-namespace config daemons
+# apiVersion: apps/v1
+# kind: DaemonSet
+# metadata:
+#   name: config-daemon-ns
+#   namespace: default  # Target namespace
+#   labels:
+#     app: config-daemon
+# spec:
+#   selector:
+#     matchLabels:
+#       app: config-daemon-ns
+#   template:
+#     metadata:
+#       labels:
+#         app: config-daemon-ns
+#     spec:
+#       serviceAccountName: config-daemon
+#       containers:
+#       - name: config-daemon
+#         image: aiagent/config-daemon:test
+#         args:
+#         - --namespace=default
+#         volumeMounts:
+#         - name: agent-configs
+#           mountPath: /var/lib/aiagent/configs
+#       volumes:
+#       - name: agent-configs
+#         hostPath:
+#           path: /var/lib/aiagent/configs/default
+#           type: DirectoryOrCreate

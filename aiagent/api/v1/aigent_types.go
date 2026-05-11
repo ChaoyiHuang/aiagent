@@ -33,9 +33,18 @@ type AIAgentSpec struct {
 	// inherited from the AgentRuntime.
 	HarnessOverride HarnessOverrideSpec `json:"harnessOverride,omitempty"`
 
-	// AgentConfig references agent-specific configuration files.
+	// AgentConfig contains framework-specific configuration in JSON format.
+	// This field is directly interpreted by the Handler (ADK, OpenClaw, etc).
+	// The Handler determines the schema and meaning of this configuration.
+	// Example for ADK: {"instruction": "You are a helpful assistant", "tools": ["search"]}
+	// Example for OpenClaw: {"gateway": {"port": 18789}, "agents": ["weather", "calculator"]}
+	// +kubebuilder:pruning:PreserveUnknownFields
+	AgentConfig *apiextensionsv1.JSON `json:"agentConfig,omitempty"`
+
+	// AgentConfigReferences references agent-specific configuration files.
 	// Mounted at /etc/agent-config/agent/.
-	AgentConfig []AgentConfigReference `json:"agentConfig,omitempty"`
+	// Deprecated: Use AgentConfig (JSON field above) instead for framework-specific configuration.
+	AgentConfigReferences []AgentConfigReference `json:"agentConfigReferences,omitempty"`
 
 	// VolumePolicy defines PVC lifecycle policy.
 	// retain: PVC is kept after agent deletion.

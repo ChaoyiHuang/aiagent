@@ -1,9 +1,18 @@
 # Test Case 2: ADK Isolated Process Mode (每进程一个Agent)
-# Architecture:
+# Architecture (Solution M - hostPath + Config Daemon):
 # ┌─────────────────────────────────────────────────────────────────┐
+# │ Config Daemon (DaemonSet on same node)                          │
+# │  - Watches AIAgent CRDs via Informer                            │
+# │  - Writes AgentConfig to hostPath                               │
+# │  - Path: /var/lib/aiagent/configs/<namespace>/<agent-name>/     │
+# │  - Files: agent-config.json, agent-meta.yaml                    │
+# │                                                                 │
 # │ Pod (AgentRuntime)                                              │
+# │  - Mounts hostPath as /etc/agent-config                         │
 # │  Handler Container                                              │
 # │    - ProcessMode: isolated                                      │
+# │    - Reads agent-index.yaml to discover agents                  │
+# │    - Reads agent-config.json for each agent                     │
 # │    - Starts Framework process per agent                         │
 # │    - Handler manages multiple process instances                 │
 # │                                                                 │
@@ -57,7 +66,7 @@ spec:
   replicas: 1
 
 ---
-# AIAgent 1 (gets its own Framework process)
+# AIAgent 1 (gets its own Framework process) with agentConfig
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -69,9 +78,15 @@ spec:
   runtimeRef:
     type: adk
     name: adk-isolated-runtime
+  agentConfig:
+    instruction: "You are a specialized AI assistant for data analysis."
+    model: "deepseek-chat"
+    tools:
+    - name: "data_processor"
+      type: "transform"
 
 ---
-# AIAgent 2 (gets its own Framework process)
+# AIAgent 2 (gets its own Framework process) with agentConfig
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -83,9 +98,15 @@ spec:
   runtimeRef:
     type: adk
     name: adk-isolated-runtime
+  agentConfig:
+    instruction: "You are a specialized AI assistant for code generation."
+    model: "deepseek-coder"
+    tools:
+    - name: "code_generator"
+      type: "synthesize"
 
 ---
-# AIAgent 3 (gets its own Framework process)
+# AIAgent 3 (gets its own Framework process) with agentConfig
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -97,3 +118,9 @@ spec:
   runtimeRef:
     type: adk
     name: adk-isolated-runtime
+  agentConfig:
+    instruction: "You are a specialized AI assistant for documentation."
+    model: "deepseek-chat"
+    tools:
+    - name: "doc_writer"
+      type: "generate"

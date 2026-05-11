@@ -3,7 +3,7 @@
 package adk
 
 import (
-	"fmt"
+	"gopkg.in/yaml.v3"
 
 	"aiagent/api/v1"
 	"aiagent/pkg/handler"
@@ -345,9 +345,7 @@ func (c *ConfigConverter) convertSkillItemsFromSpec(skills []v1.SkillConfig) []A
 
 // MarshalYAML converts struct to YAML bytes.
 func (c *ConfigConverter) MarshalYAML(v interface{}) ([]byte, error) {
-	// Simple YAML marshaling (using fmt for now, proper YAML lib needed)
-	// This is a placeholder - proper implementation would use yaml.Marshal
-	return []byte(fmt.Sprintf("%v", v)), nil
+	return yaml.Marshal(v)
 }
 
 // ============================================================

@@ -131,6 +131,21 @@ func (h *MCPHarness) GetServer(name string) (*MCPServer, error) {
 	return server, nil
 }
 
+// GetSpec returns the MCP harness spec.
+func (h *MCPHarness) GetSpec() *v1.MCPHarnessSpec {
+	return h.spec
+}
+
+// GetRegistryType returns the registry type.
+func (h *MCPHarness) GetRegistryType() string {
+	return h.spec.RegistryType
+}
+
+// GetEndpoint returns the registry endpoint.
+func (h *MCPHarness) GetEndpoint() string {
+	return h.spec.Endpoint
+}
+
 // ListServers returns all MCP servers.
 func (h *MCPHarness) ListServers() []*MCPServer {
 	h.mu.RLock()

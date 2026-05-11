@@ -1,9 +1,18 @@
 # Test Case 1: ADK Shared Process Mode (单进程多Agent)
-# Architecture:
+# Architecture (Solution M - hostPath + Config Daemon):
 # ┌─────────────────────────────────────────────────────────────────┐
+# │ Config Daemon (DaemonSet on same node)                          │
+# │  - Watches AIAgent CRDs via Informer                            │
+# │  - Writes AgentConfig to hostPath                               │
+# │  - Path: /var/lib/aiagent/configs/<namespace>/<agent-name>/     │
+# │  - Files: agent-config.json, agent-meta.yaml                    │
+# │                                                                 │
 # │ Pod (AgentRuntime)                                              │
+# │  - Mounts hostPath as /etc/agent-config                         │
 # │  Handler Container                                              │
 # │    - ProcessMode: shared                                        │
+# │    - Reads agent-index.yaml to discover agents                  │
+# │    - Reads agent-config.json for each agent                     │
 # │    - Starts single Framework process                            │
 # │    - Framework runs all agents internally                       │
 # │                                                                 │
@@ -55,7 +64,7 @@ spec:
   replicas: 1
 
 ---
-# AIAgent 1
+# AIAgent 1 with agentConfig (ADK-specific configuration)
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -67,9 +76,20 @@ spec:
   runtimeRef:
     type: adk
     name: adk-shared-runtime
+  # Framework-specific configuration (ADK format)
+  # This JSON is written to hostPath by Config Daemon
+  # Handler reads it and generates ADK agent.yaml
+  agentConfig:
+    instruction: "You are a helpful AI assistant specialized in general tasks."
+    model: "gpt-4"
+    tools:
+    - name: "search"
+      type: "web_search"
+    - name: "calculator"
+      type: "math"
 
 ---
-# AIAgent 2
+# AIAgent 2 with agentConfig
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -81,3 +101,9 @@ spec:
   runtimeRef:
     type: adk
     name: adk-shared-runtime
+  agentConfig:
+    instruction: "You are a helpful AI assistant specialized in code analysis."
+    model: "gpt-4"
+    tools:
+    - name: "code_analyzer"
+      type: "static_analysis"

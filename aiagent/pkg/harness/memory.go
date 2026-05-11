@@ -64,6 +64,31 @@ func (h *MemoryHarness) GetStore() MemoryStore {
 	return h.store
 }
 
+// GetSpec returns the memory harness spec.
+func (h *MemoryHarness) GetSpec() *v1.MemoryHarnessSpec {
+	return h.spec
+}
+
+// GetType returns the memory type.
+func (h *MemoryHarness) GetType() string {
+	return h.spec.Type
+}
+
+// GetEndpoint returns the storage endpoint.
+func (h *MemoryHarness) GetEndpoint() string {
+	return h.spec.Endpoint
+}
+
+// GetTTL returns the TTL in seconds.
+func (h *MemoryHarness) GetTTL() int64 {
+	return int64(h.spec.TTL)
+}
+
+// IsPersistenceEnabled returns if persistence is enabled.
+func (h *MemoryHarness) IsPersistenceEnabled() bool {
+	return h.spec.PersistenceEnabled
+}
+
 // Store stores a value.
 func (h *MemoryHarness) Store(ctx context.Context, key string, value []byte) error {
 	ttl := h.spec.TTL

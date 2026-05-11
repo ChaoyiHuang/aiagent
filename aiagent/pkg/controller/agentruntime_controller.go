@@ -31,6 +31,10 @@ const (
 
 	// HarnessConfigMapSuffix is added to Harness name for ConfigMap.
 	HarnessConfigMapSuffix = "-harness-config"
+
+	// AgentConfigHostPath is the hostPath base directory for agent configs.
+	// Config Daemon writes AIAgent configs here, Handler reads from mounted volume.
+	AgentConfigHostPath = "/var/lib/aiagent/configs"
 )
 
 // AgentRuntimeReconciler reconciles an AgentRuntime object.
@@ -398,7 +402,7 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // This function is FRAMEWORK-AGNOSTIC - all configuration comes from the spec.
 // No hardcoded knowledge of ADK, OpenClaw, or any other framework.
 //
-// Architecture (ImageVolume pattern):
+// Architecture (ImageVolume pattern + hostPath for agent configs):
 // ┌─────────────────────────────────────────────────────────────────┐
 // │ Pod (AgentRuntime)                                              │
 // │                                                                 │
@@ -407,13 +411,15 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // │  │ - Starts Framework processes via exec.Command             ││
 // │  │ - Uses /framework-rootfs/<binary-path> for Framework exe   ││
 // │  │ - Controls process lifecycle (start/stop/monitor)          ││
+// │  │ - Reads agent configs from hostPath volume                ││
 // │  │                                                            ││
 // │  │ VolumeMounts:                                              ││
 // │  │   /framework-rootfs -> ImageVolume (Framework image)       ││
 // │  │   /etc/harness/<name> -> Harness ConfigMaps                ││
 // │  │   /shared/workdir -> EmptyDir (agent workspace)            ││
 // │  │   /shared/config -> EmptyDir (runtime configs)             ││
-// │  │   /etc/agent-config -> EmptyDir (agent configs)            ││
+// │  │   /etc/agent-config -> hostPath (from Config Daemon)       ││
+// │  │   /etc/agent-config/<agent-name>/agent-config.json     ││
 // │  └────────────────────────────────────────────────────────────┘│
 // │                                                                 │
 // │  Framework Container (dummy - provides image content only)     │
@@ -422,6 +428,14 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // │  │ - Provides image content for ImageVolume                   ││
 // │  │ - Does NOT run Framework processes                         ││
 // │  │ - Handler manages Framework processes                      ││
+// │  └────────────────────────────────────────────────────────────┘│
+// │                                                                 │
+// │  Config Daemon (DaemonSet on same node)                        │
+// │  ┌────────────────────────────────────────────────────────────┐│
+// │  │ - Watches AIAgent CRDs via Informer                        ││
+// │  │ - Writes AgentConfig to hostPath                       ││
+// │  │ - /var/lib/aiagent/configs/<namespace>/<name>/             ││
+// │  │ - Creates agent-config.json + agent-meta.yaml          ││
 // │  └────────────────────────────────────────────────────────────┘│
 // │                                                                 │
 // │  ShareProcessNamespace: true (Handler can see/ctrl Framework) │
@@ -450,11 +464,26 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 		})
 	}
 
+	// hostPath volume for agent configs (written by Config Daemon)
+	// Config Daemon watches AIAgent CRDs and syncs AgentConfig to this path
+	// Handler reads configs directly without K8s API calls
+	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json
+	hostPathType := corev1.HostPathDirectoryOrCreate
+	agentConfigHostPath := corev1.Volume{
+		Name: "agent-configs",
+		VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{
+				Path: AgentConfigHostPath + "/" + runtime.Namespace,
+				Type: &hostPathType,
+			},
+		},
+	}
+	volumes = append(volumes, agentConfigHostPath)
+
 	// Shared EmptyDir volumes for runtime/agent workspace
 	sharedVolumes := []corev1.Volume{
 		{Name: "shared-workdir", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		{Name: "shared-config", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: "agent-config", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 	volumes = append(volumes, sharedVolumes...)
 
@@ -478,11 +507,12 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 	volumes = append(volumes, frameworkImageVolume)
 
 	// Handler mounts Framework image at /framework-rootfs
+	// Agent configs at /etc/agent-config (from Config Daemon via hostPath)
 	handlerVolumeMounts = append(handlerVolumeMounts,
 		corev1.VolumeMount{Name: "framework-image", MountPath: "/framework-rootfs"},
 		corev1.VolumeMount{Name: "shared-workdir", MountPath: "/shared/workdir"},
 		corev1.VolumeMount{Name: "shared-config", MountPath: "/shared/config"},
-		corev1.VolumeMount{Name: "agent-config", MountPath: "/etc/agent-config"},
+		corev1.VolumeMount{Name: "agent-configs", MountPath: "/etc/agent-config"},
 	)
 
 	// Build Handler container from spec
@@ -504,6 +534,12 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 	handlerContainer.Env = append(handlerContainer.Env, corev1.EnvVar{
 		Name:  "FRAMEWORK_TYPE",
 		Value: runtime.Spec.AgentFramework.Type,
+	})
+
+	// Add namespace env var for handler to find agent configs
+	handlerContainer.Env = append(handlerContainer.Env, corev1.EnvVar{
+		Name:  "NAMESPACE",
+		Value: runtime.Namespace,
 	})
 
 	// Build Framework container as DUMMY container (pause process only)

@@ -190,6 +190,38 @@ func (h *SandboxHarness) IsExternal() bool {
 	return h.GetMode() == SandboxModeExternal
 }
 
+// GetSpec returns the sandbox harness spec.
+func (h *SandboxHarness) GetSpec() *v1.SandboxHarnessSpec {
+	return h.spec
+}
+
+// GetEndpoint returns the external sandbox endpoint.
+func (h *SandboxHarness) GetEndpoint() string {
+	return h.spec.Endpoint
+}
+
+// GetTimeout returns the execution timeout in seconds.
+func (h *SandboxHarness) GetTimeout() int64 {
+	return int64(h.spec.Timeout)
+}
+
+// GetResourceLimits returns the resource limits.
+func (h *SandboxHarness) GetResourceLimits() *SandboxResourceLimits {
+	if h.spec.ResourceLimits == nil {
+		return nil
+	}
+	return &SandboxResourceLimits{
+		CPU:    h.spec.ResourceLimits.CPU,
+		Memory: h.spec.ResourceLimits.Memory,
+	}
+}
+
+// SandboxResourceLimits represents sandbox resource limits.
+type SandboxResourceLimits struct {
+	CPU    string
+	Memory string
+}
+
 // Execute executes a tool in the sandbox.
 // For embedded mode: executes locally
 // For external mode: executes remotely

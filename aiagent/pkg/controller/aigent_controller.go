@@ -25,6 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"gopkg.in/yaml.v3"
+
 	"aiagent/api/v1"
 	"aiagent/pkg/scheduler"
 )
@@ -697,9 +699,20 @@ func (r *AIAgentReconciler) generateAgentIndexYAML(entries []AgentIndexEntry) st
 
 // parseAgentIndexYAML parses agent index YAML.
 func (r *AIAgentReconciler) parseAgentIndexYAML(yamlStr string, index *AgentIndex) error {
-	// Simple parsing - in production use proper YAML parser
-	// This is a placeholder implementation
-	*index = AgentIndex{Agents: []AgentIndexEntry{}}
+	if yamlStr == "" {
+		*index = AgentIndex{Agents: []AgentIndexEntry{}}
+		return nil
+	}
+
+	if err := yaml.Unmarshal([]byte(yamlStr), index); err != nil {
+		return fmt.Errorf("failed to parse agent index YAML: %w", err)
+	}
+
+	// Ensure Agents slice is not nil
+	if index.Agents == nil {
+		index.Agents = []AgentIndexEntry{}
+	}
+
 	return nil
 }
 
