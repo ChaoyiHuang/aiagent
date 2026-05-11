@@ -27,7 +27,7 @@ import (
 
 const (
 	// AgentRuntimeFinalizer is used for cleanup on deletion.
-	AgentRuntimeFinalizer = "aiagent.io/agentruntime-finalizer"
+	AgentRuntimeFinalizer = "agent.ai/agentruntime-finalizer"
 
 	// HarnessConfigMapSuffix is added to Harness name for ConfigMap.
 	HarnessConfigMapSuffix = "-harness-config"
@@ -83,12 +83,12 @@ func (r *AgentRuntimeReconciler) harnessToAgentRuntimeMapper(ctx context.Context
 	return requests
 }
 
-//+kubebuilder:rbac:groups=aiagent.io,resources=agentruntimes,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=aiagent.io,resources=agentruntimes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=aiagent.io,resources=agentruntimes/finalizers,verbs=update
+//+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=aiagent.io,resources=harnesses,verbs=get;list;watch
+//+kubebuilder:rbac:groups=agent.ai,resources=harnesses,verbs=get;list;watch
 
 // Reconcile handles the reconciliation loop for AgentRuntime.
 func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -359,9 +359,9 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 			Name:      podName,
 			Namespace: runtime.Namespace,
 			Labels: map[string]string{
-				"aiagent.io/runtime":      runtime.Name,
-				"aiagent.io/type":         "agent-runtime",
-				"aiagent.io/framework":    runtime.Spec.AgentFramework.Type,
+				"agent.ai/runtime":      runtime.Name,
+				"agent.ai/type":         "agent-runtime",
+				"agent.ai/framework":    runtime.Spec.AgentFramework.Type,
 			},
 		},
 		Spec: r.buildPodSpec(runtime),

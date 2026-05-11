@@ -122,8 +122,8 @@ func TestAgentRuntimeReconciler_Reconcile_PodCreation(t *testing.T) {
 	}
 
 	// Verify Pod has correct labels
-	if pod.Labels["aiagent.io/runtime"] != "test-runtime-pod" {
-		t.Errorf("expected runtime label, got %s", pod.Labels["aiagent.io/runtime"])
+	if pod.Labels["agent.ai/runtime"] != "test-runtime-pod" {
+		t.Errorf("expected runtime label, got %s", pod.Labels["agent.ai/runtime"])
 	}
 
 	// Verify Pod has two containers (handler + framework)

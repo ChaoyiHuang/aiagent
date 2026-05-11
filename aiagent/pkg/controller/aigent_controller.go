@@ -31,7 +31,7 @@ import (
 
 const (
 	// AIAgentFinalizer is used for cleanup on deletion.
-	AIAgentFinalizer = "aiagent.io/aigent-finalizer"
+	AIAgentFinalizer = "agent.ai/aigent-finalizer"
 
 	// AgentConfigMapPrefix is the prefix for agent-specific ConfigMaps.
 	AgentConfigMapPrefix = "agent-config-"
@@ -102,11 +102,11 @@ func (r *AIAgentReconciler) runtimeToAgentMapper(ctx context.Context, obj client
 	return requests
 }
 
-//+kubebuilder:rbac:groups=aiagent.io,resources=aigents,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=aiagent.io,resources=aigents/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=aiagent.io,resources=aigents/finalizers,verbs=update
-//+kubebuilder:rbac:groups=aiagent.io,resources=agentruntimes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=aiagent.io,resources=agentruntimes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=agent.ai,resources=aigents,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=agent.ai,resources=aigents/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=agent.ai,resources=aigents/finalizers,verbs=update
+//+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 
@@ -460,8 +460,8 @@ func (r *AIAgentReconciler) createAgentConfigMap(ctx context.Context, agent *v1.
 			Name:      cmName,
 			Namespace: agent.Namespace,
 			Labels: map[string]string{
-				"aiagent.io/agent":     agent.Name,
-				"aiagent.io/component": "agent-config",
+				"agent.ai/agent":     agent.Name,
+				"agent.ai/component": "agent-config",
 			},
 		},
 		Data: map[string]string{
@@ -569,8 +569,8 @@ func (r *AIAgentReconciler) createAgentPVC(ctx context.Context, agent *v1.AIAgen
 			Name:      pvcName,
 			Namespace: agent.Namespace,
 			Labels: map[string]string{
-				"aiagent.io/agent":     agent.Name,
-				"aiagent.io/component": "agent-storage",
+				"agent.ai/agent":     agent.Name,
+				"agent.ai/component": "agent-storage",
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
@@ -628,8 +628,8 @@ func (r *AIAgentReconciler) updateAgentIndex(ctx context.Context, runtime *v1.Ag
 					Name:      indexCMName,
 					Namespace: runtime.Namespace,
 					Labels: map[string]string{
-						"aiagent.io/runtime":   runtime.Name,
-						"aiagent.io/component": "agent-index",
+						"agent.ai/runtime":   runtime.Name,
+						"agent.ai/component": "agent-index",
 					},
 				},
 				Data: map[string]string{

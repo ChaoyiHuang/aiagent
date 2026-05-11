@@ -25,7 +25,7 @@ import (
 
 const (
 	// HarnessFinalizer is used for cleanup on deletion.
-	HarnessFinalizer = "aiagent.io/harness-finalizer"
+	HarnessFinalizer = "agent.ai/harness-finalizer"
 
 	// HarnessConfigSuffix is added to Harness name for ConfigMap.
 	// Note: different from AgentRuntime's HarnessConfigMapSuffix
@@ -46,9 +46,9 @@ func (r *HarnessReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-//+kubebuilder:rbac:groups=aiagent.io,resources=harnesses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=aiagent.io,resources=harnesses/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=aiagent.io,resources=harnesses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=agent.ai,resources=harnesses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=agent.ai,resources=harnesses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=agent.ai,resources=harnesses/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
@@ -139,9 +139,9 @@ func (r *HarnessReconciler) createHarnessConfigMap(ctx context.Context, harness 
 			Name:      cmName,
 			Namespace: harness.Namespace,
 			Labels: map[string]string{
-				"aiagent.io/harness":    harness.Name,
-				"aiagent.io/harness-type": string(harness.Spec.Type),
-				"aiagent.io/component":  "harness-config",
+				"agent.ai/harness":    harness.Name,
+				"agent.ai/harness-type": string(harness.Spec.Type),
+				"agent.ai/component":  "harness-config",
 			},
 		},
 		Data: r.generateHarnessConfigData(harness),

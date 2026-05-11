@@ -22,4 +22,4 @@ nodes:
     featureGates:
       # ProcessNamespaceSharing is stable in 1.29
   labels:
-    aiagent.io/node-type: control-plane
+    agent.ai/node-type: control-plane

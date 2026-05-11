@@ -203,12 +203,12 @@ func TestHarnessReconciler_Reconcile_ConfigMapCreation(t *testing.T) {
 	}
 
 	// Verify ConfigMap has correct labels
-	if cm.Labels["aiagent.io/harness"] != "test-sandbox" {
-		t.Errorf("expected harness label, got %s", cm.Labels["aiagent.io/harness"])
+	if cm.Labels["agent.ai/harness"] != "test-sandbox" {
+		t.Errorf("expected harness label, got %s", cm.Labels["agent.ai/harness"])
 	}
 
-	if cm.Labels["aiagent.io/harness-type"] != "sandbox" {
-		t.Errorf("expected harness-type label, got %s", cm.Labels["aiagent.io/harness-type"])
+	if cm.Labels["agent.ai/harness-type"] != "sandbox" {
+		t.Errorf("expected harness-type label, got %s", cm.Labels["agent.ai/harness-type"])
 	}
 
 	// Verify harness type in data

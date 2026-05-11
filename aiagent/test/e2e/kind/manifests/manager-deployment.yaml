@@ -1,3 +1,78 @@
+# RBAC Configuration for AIAgent Manager (Cluster-wide permissions)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiagent-manager
+  namespace: aiagent-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aiagent-manager-clusterrole
+rules:
+# AgentRuntime permissions
+- apiGroups: ["agent.ai"]
+  resources: ["agentruntimes"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["agent.ai"]
+  resources: ["agentruntimes/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["agent.ai"]
+  resources: ["agentruntimes/finalizers"]
+  verbs: ["update"]
+# AIAgent permissions
+- apiGroups: ["agent.ai"]
+  resources: ["aigents"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["agent.ai"]
+  resources: ["aigents/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["agent.ai"]
+  resources: ["aigents/finalizers"]
+  verbs: ["update"]
+# Harness permissions
+- apiGroups: ["agent.ai"]
+  resources: ["harnesses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["agent.ai"]
+  resources: ["harnesses/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["agent.ai"]
+  resources: ["harnesses/finalizers"]
+  verbs: ["update"]
+# Pod permissions (for creating runtime pods)
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ConfigMap permissions
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Secret permissions
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+# PVC permissions
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aiagent-manager-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aiagent-manager-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: aiagent-manager
+  namespace: aiagent-system
+
+---
 # Manager Deployment for E2E Testing
 apiVersion: apps/v1
 kind: Deployment
@@ -14,6 +89,7 @@ spec:
       labels:
         app: aiagent-manager
     spec:
+      serviceAccountName: aiagent-manager
       containers:
       - name: manager
         image: aiagent/manager:test
