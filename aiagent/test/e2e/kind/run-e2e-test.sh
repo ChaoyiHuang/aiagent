@@ -131,43 +131,43 @@ build_images() {
     echo "Building Docker Images"
     echo "=================================================="
 
-    # Build from parent directory to include adk-go in context
-    cd "${PROJECT_ROOT}/.."
+    # Build from aiagent directory (adk-go cloned from GitHub in Dockerfile)
+    cd "${PROJECT_ROOT}"
 
     # Build Manager image
     echo ">>> Building aiagent/manager:test..."
     docker build -t aiagent/manager:test \
-        -f aiagent/Dockerfile.manager \
+        -f Dockerfile.manager \
         . || { echo "ERROR: Failed to build manager"; return 1; }
 
     # Build ADK Framework image (DUMMY container)
     echo ">>> Building aiagent/adk-framework:test..."
     docker build -t aiagent/adk-framework:test \
-        -f aiagent/Dockerfile.adk-framework \
+        -f Dockerfile.adk-framework \
         . || { echo "ERROR: Failed to build adk-framework"; return 1; }
 
     # Build ADK Handler image
     echo ">>> Building aiagent/adk-handler:test..."
     docker build -t aiagent/adk-handler:test \
-        -f aiagent/Dockerfile.adk-handler \
+        -f Dockerfile.adk-handler \
         . || { echo "ERROR: Failed to build adk-handler"; return 1; }
 
     # Build OpenClaw Framework image (DUMMY container)
     echo ">>> Building aiagent/openclaw-framework:test..."
     docker build -t aiagent/openclaw-framework:test \
-        -f aiagent/Dockerfile.openclaw-framework \
-        aiagent || { echo "ERROR: Failed to build openclaw-framework"; return 1; }
+        -f Dockerfile.openclaw-framework \
+        . || { echo "ERROR: Failed to build openclaw-framework"; return 1; }
 
     # Build OpenClaw Handler image
     echo ">>> Building aiagent/openclaw-handler:test..."
     docker build -t aiagent/openclaw-handler:test \
-        -f aiagent/Dockerfile.openclaw-handler \
+        -f Dockerfile.openclaw-handler \
         . || { echo "ERROR: Failed to build openclaw-handler"; return 1; }
 
     # Build Config Daemon image
     echo ">>> Building aiagent/config-daemon:test..."
     docker build -t aiagent/config-daemon:test \
-        -f aiagent/Dockerfile.config-daemon \
+        -f Dockerfile.config-daemon \
         . || { echo "ERROR: Failed to build config-daemon"; return 1; }
 
     echo ""
