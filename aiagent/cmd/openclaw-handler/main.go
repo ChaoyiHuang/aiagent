@@ -62,6 +62,7 @@ var (
 	frameworkBin = flag.String("framework", "", "Framework binary path (ImageVolume: /framework-rootfs/usr/local/bin/openclaw)")
 	harnessDir   = flag.String("harness", "", "Harness config directory (e.g., /etc/harness)")
 	agentConfigDir = flag.String("agentconfig", "", "Agent config directory (e.g., /etc/agent-config)")
+	namespace    = flag.String("namespace", "", "Namespace for agent configs")
 	basePort     = flag.Int("baseport", 18789, "Base Gateway port (each instance gets port + offset)")
 	debug        = flag.Bool("debug", false, "Enable debug logging")
 )
@@ -146,6 +147,15 @@ func main() {
 		}
 	}
 
+	// Get namespace from environment or flag
+	ns := *namespace
+	if ns == "" {
+		ns = os.Getenv("NAMESPACE")
+	}
+	if ns == "" {
+		ns = "aiagent-system" // Default namespace
+	}
+
 	// Get base port from environment or flag
 	baseP := *basePort
 	if bp := os.Getenv("BASE_GATEWAY_PORT"); bp != "" {
@@ -161,6 +171,7 @@ func main() {
 	log.Printf("Framework Binary: %s", fwBin)
 	log.Printf("Harness Directory: %s", hDir)
 	log.Printf("Agent Config Directory: %s", agCfgDir)
+	log.Printf("Namespace: %s", ns)
 	log.Printf("Base Gateway Port: %d", baseP)
 
 	// Create Handler configuration
@@ -190,7 +201,7 @@ func main() {
 	}()
 
 	// Run handler service
-	if err := runHandler(ctx, h, hDir, agCfgDir, wd, cfgDir, baseP); err != nil {
+	if err := runHandler(ctx, h, hDir, agCfgDir, ns, wd, cfgDir, baseP); err != nil {
 		log.Fatalf("Handler error: %v", err)
 	}
 
@@ -204,7 +215,7 @@ func parsePort(s string) (int, error) {
 }
 
 // runHandler runs the handler service loop with Gateway management from hostPath.
-func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir string, agentConfigDir string, workDir string, configDir string, basePort int) error {
+func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir string, agentConfigDir string, namespace string, workDir string, configDir string, basePort int) error {
 	log.Printf("Initializing OpenClaw Handler service...")
 
 	// 1. Initialize Harness Manager
@@ -232,7 +243,8 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 	os.MkdirAll(configDir, 0755)
 
 	// 5. Watch AgentIndex for changes (agent-index.yaml written by Config Daemon)
-	agentIndexPath := filepath.Join(agentConfigDir, "agent-index.yaml")
+	// Path structure: /var/lib/aiagent/configs/<namespace>/agent-index.yaml
+	agentIndexPath := filepath.Join(agentConfigDir, namespace, "agent-index.yaml")
 	log.Printf("Watching AgentIndex at: %s", agentIndexPath)
 
 	// Track loaded gateways
@@ -246,7 +258,7 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 	defer ticker.Stop()
 
 	// Initial load
-	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, namespace, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
 
 	for {
 		select {
@@ -256,7 +268,7 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 
 		case <-ticker.C:
 			// Poll for changes
-			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, namespace, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
 
 			// Check Gateway health
 			checkGatewayHealth(ctx, h)
@@ -495,7 +507,7 @@ func buildHarnessConfig(mgr *harness.HarnessManager) *handler.HarnessConfig {
 }
 
 // loadGatewaysFromIndex loads gateways from agent-index.yaml (written by Config Daemon).
-func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int) {
+func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, namespace string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int) {
 	// Read agent index
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -529,8 +541,8 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 
 		log.Printf("Loading Gateway for agent: %s (phase: %s)", entry.Name, entry.Phase)
 
-		// Load agent config from hostPath
-		agentSpec, agentConfig, err := loadAgentFromHostPath(entry.Name, agentConfigDir)
+		// Load agent config from hostPath (with namespace subdirectory)
+		agentSpec, agentConfig, err := loadAgentFromHostPath(entry.Name, agentConfigDir, namespace)
 		if err != nil {
 			log.Printf("Error loading agent %s from hostPath: %v", entry.Name, err)
 			continue
@@ -569,9 +581,10 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 }
 
 // loadAgentFromHostPath loads agent config from hostPath directory.
-func loadAgentFromHostPath(agentName string, agentConfigDir string) (*v1.AIAgentSpec, map[string]interface{}, error) {
+func loadAgentFromHostPath(agentName string, agentConfigDir string, namespace string) (*v1.AIAgentSpec, map[string]interface{}, error) {
 	// Read agent-meta.yaml for basic metadata
-	metaPath := filepath.Join(agentConfigDir, agentName, "agent-meta.yaml")
+	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-meta.yaml
+	metaPath := filepath.Join(agentConfigDir, namespace, agentName, "agent-meta.yaml")
 	metaData, err := os.ReadFile(metaPath)
 	if err != nil {
 		if *debug {
@@ -604,7 +617,8 @@ func loadAgentFromHostPath(agentName string, agentConfigDir string) (*v1.AIAgent
 	}
 
 	// Read agent-config.json
-	agentConfigPath := filepath.Join(agentConfigDir, agentName, "agent-config.json")
+	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json
+	agentConfigPath := filepath.Join(agentConfigDir, namespace, agentName, "agent-config.json")
 	agentConfigData, err := os.ReadFile(agentConfigPath)
 	if err != nil {
 		if *debug {

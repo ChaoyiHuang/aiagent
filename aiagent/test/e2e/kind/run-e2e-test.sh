@@ -391,9 +391,10 @@ verify_adk_shared() {
     echo "    ----------------------------------------"
 
     POD_NAME="adk-shared-runtime-runtime"
+    NS="aiagent-system"
 
     # Check AgentRuntime is running
-    RUNTIME_STATUS=$(kubectl get agentruntime adk-shared-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    RUNTIME_STATUS=$(kubectl get agentruntime adk-shared-runtime -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$RUNTIME_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: AgentRuntime status is '$RUNTIME_STATUS', expected 'Running'"
         return 1
@@ -401,7 +402,7 @@ verify_adk_shared() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check multiple AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-shared-runtime -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-shared-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" -lt 2 ]; then
         echo "    ❌ ERROR: Expected at least 2 agents, got ${AGENT_COUNT}"
         return 1
@@ -409,7 +410,7 @@ verify_adk_shared() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check Pod structure
-    POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    POD_STATUS=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
         return 1
@@ -417,7 +418,7 @@ verify_adk_shared() {
     echo "    ✓ Pod phase: Running"
 
     # Check ImageVolume (K8s 1.35+ format)
-    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
+    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
     if [ "$IMAGE_VOLUME" == "" ]; then
         echo "    ❌ ERROR: ImageVolume not configured"
         return 1
@@ -425,7 +426,7 @@ verify_adk_shared() {
     echo "    ✓ ImageVolume configured: ${IMAGE_VOLUME}"
 
     # Check ImageVolume.PullPolicy
-    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
     if [ "$PULL_POLICY" != "IfNotPresent" ]; then
         echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent', got '${PULL_POLICY}'"
         return 1
@@ -433,7 +434,7 @@ verify_adk_shared() {
     echo "    ✓ ImageVolume pullPolicy: IfNotPresent"
 
     # Check DUMMY Framework container
-    FW_CMD=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.containers[?(@.name=="agent-framework")].command[0]}' 2>/dev/null)
+    FW_CMD=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.containers[?(@.name=="agent-framework")].command[0]}' 2>/dev/null)
     if [ "$FW_CMD" != "pause" ]; then
         echo "    ❌ ERROR: Framework container should have 'pause' command (DUMMY)"
         return 1
@@ -441,7 +442,7 @@ verify_adk_shared() {
     echo "    ✓ Framework container: DUMMY (pause)"
 
     # Check ShareProcessNamespace
-    SHARE_PID=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.shareProcessNamespace}' 2>/dev/null)
+    SHARE_PID=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.shareProcessNamespace}' 2>/dev/null)
     if [ "$SHARE_PID" != "true" ]; then
         echo "    ❌ ERROR: ShareProcessNamespace should be true"
         return 1
@@ -459,9 +460,10 @@ verify_adk_isolated() {
     echo "    ----------------------------------------"
 
     POD_NAME="adk-isolated-runtime-runtime"
+    NS="aiagent-system"
 
     # Check AgentRuntime is running
-    RUNTIME_STATUS=$(kubectl get agentruntime adk-isolated-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    RUNTIME_STATUS=$(kubectl get agentruntime adk-isolated-runtime -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$RUNTIME_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: AgentRuntime status is '$RUNTIME_STATUS', expected 'Running'"
         return 1
@@ -469,7 +471,7 @@ verify_adk_isolated() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check multiple AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-isolated-runtime -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-isolated-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" -lt 2 ]; then
         echo "    ❌ ERROR: Expected at least 2 agents, got ${AGENT_COUNT}"
         return 1
@@ -477,7 +479,7 @@ verify_adk_isolated() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check Pod
-    POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    POD_STATUS=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
         return 1
@@ -485,7 +487,7 @@ verify_adk_isolated() {
     echo "    ✓ Pod phase: Running"
 
     # Check ImageVolume
-    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
+    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
     if [ "$IMAGE_VOLUME" == "" ]; then
         echo "    ❌ ERROR: ImageVolume not configured"
         return 1
@@ -493,7 +495,7 @@ verify_adk_isolated() {
     echo "    ✓ ImageVolume configured"
 
     # Check ImageVolume.PullPolicy
-    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
     if [ "$PULL_POLICY" != "IfNotPresent" ]; then
         echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent'"
         return 1
@@ -511,9 +513,10 @@ verify_openclaw() {
     echo "    ----------------------------------------"
 
     POD_NAME="openclaw-runtime-runtime"
+    NS="aiagent-system"
 
     # Check AgentRuntime is running
-    RUNTIME_STATUS=$(kubectl get agentruntime openclaw-runtime -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    RUNTIME_STATUS=$(kubectl get agentruntime openclaw-runtime -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$RUNTIME_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: AgentRuntime status is '$RUNTIME_STATUS', expected 'Running'"
         return 1
@@ -521,7 +524,7 @@ verify_openclaw() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check exactly 2 AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=openclaw-runtime -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aigent -l runtime=openclaw-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" != 2 ]; then
         echo "    ❌ ERROR: Expected 2 AIAgent CRDs (openclaw-1, openclaw-2), got ${AGENT_COUNT}"
         return 1
@@ -529,8 +532,8 @@ verify_openclaw() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check agent names
-    AGENT_1=$(kubectl get aigent openclaw-1 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-    AGENT_2=$(kubectl get aigent openclaw-2 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    AGENT_1=$(kubectl get aigent openclaw-1 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    AGENT_2=$(kubectl get aigent openclaw-2 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     if [ "$AGENT_1" != "openclaw-1" ] || [ "$AGENT_2" != "openclaw-2" ]; then
         echo "    ❌ ERROR: Expected AIAgent names openclaw-1 and openclaw-2"
         return 1
@@ -538,7 +541,7 @@ verify_openclaw() {
     echo "    ✓ AIAgent names: openclaw-1, openclaw-2"
 
     # Check Pod
-    POD_STATUS=$(kubectl get pod ${POD_NAME} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    POD_STATUS=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     if [ "$POD_STATUS" != "Running" ]; then
         echo "    ❌ ERROR: Pod status is '$POD_STATUS'"
         return 1
@@ -546,7 +549,7 @@ verify_openclaw() {
     echo "    ✓ Pod phase: Running"
 
     # Check ImageVolume
-    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
+    IMAGE_VOLUME=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image}' 2>/dev/null)
     if [ "$IMAGE_VOLUME" == "" ]; then
         echo "    ❌ ERROR: ImageVolume not configured"
         return 1
@@ -554,7 +557,7 @@ verify_openclaw() {
     echo "    ✓ ImageVolume configured"
 
     # Check ImageVolume.PullPolicy
-    PULL_POLICY=$(kubectl get pod ${POD_NAME} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
+    PULL_POLICY=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.volumes[?(@.name=="framework-image")].image.pullPolicy}' 2>/dev/null)
     if [ "$PULL_POLICY" != "IfNotPresent" ]; then
         echo "    ❌ ERROR: ImageVolume pullPolicy should be 'IfNotPresent'"
         return 1
@@ -583,7 +586,7 @@ run_tests() {
 
     # Wait for AgentRuntime to be processed by controller
     echo "    Waiting for AgentRuntime to be ready..."
-    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-shared-runtime --timeout=120s || true
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-shared-runtime -n aiagent-system --timeout=120s || true
     sleep 10
 
     if verify_adk_shared; then
@@ -686,11 +689,11 @@ show_status() {
 
     echo ""
     echo ">>> AgentRuntimes:"
-    kubectl get agentruntime || echo "    No AgentRuntimes found"
+    kubectl get agentruntime -n aiagent-system || echo "    No AgentRuntimes found"
 
     echo ""
     echo ">>> AIAgents:"
-    kubectl get aigent || echo "    No AIAgents found"
+    kubectl get aigent -n aiagent-system || echo "    No AIAgents found"
 
     echo ""
     echo ">>> All Pods:"
