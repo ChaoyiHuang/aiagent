@@ -366,6 +366,16 @@ deploy_config_daemon() {
     echo "Deploying Config Daemon"
     echo "=================================================="
 
+    # Check if Config Daemon is already running
+    READY_COUNT=$(kubectl get daemonset config-daemon -n aiagent-system -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+    DESIRED_COUNT=$(kubectl get daemonset config-daemon -n aiagent-system -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+
+    if [ "$READY_COUNT" == "$DESIRED_COUNT" ] && [ "$READY_COUNT" -gt 0 ]; then
+        echo ">>> Config Daemon already running (${READY_COUNT}/${DESIRED_COUNT} pods ready)"
+        kubectl get pods -n aiagent-system -l app=config-daemon
+        return 0
+    fi
+
     # Deploy config daemon
     kubectl apply -f "${SCRIPT_DIR}/manifests/config-daemon-deployment.yaml"
 

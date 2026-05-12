@@ -243,8 +243,9 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 	os.MkdirAll(configDir, 0755)
 
 	// 5. Watch AgentIndex for changes (agent-index.yaml written by Config Daemon)
-	// Path structure: /var/lib/aiagent/configs/<namespace>/agent-index.yaml
-	agentIndexPath := filepath.Join(agentConfigDir, namespace, "agent-index.yaml")
+	// Path structure: mount is /var/lib/aiagent/configs/<namespace> -> /etc/agent-config
+	// So agent-index.yaml is directly at /etc/agent-config/agent-index.yaml
+	agentIndexPath := filepath.Join(agentConfigDir, "agent-index.yaml")
 	log.Printf("Watching AgentIndex at: %s", agentIndexPath)
 
 	// Track loaded gateways
@@ -258,7 +259,7 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 	defer ticker.Stop()
 
 	// Initial load
-	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, namespace, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
 
 	for {
 		select {
@@ -268,7 +269,7 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 
 		case <-ticker.C:
 			// Poll for changes
-			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, namespace, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
 
 			// Check Gateway health
 			checkGatewayHealth(ctx, h)
@@ -507,7 +508,7 @@ func buildHarnessConfig(mgr *harness.HarnessManager) *handler.HarnessConfig {
 }
 
 // loadGatewaysFromIndex loads gateways from agent-index.yaml (written by Config Daemon).
-func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, namespace string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int) {
+func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int) {
 	// Read agent index
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -541,8 +542,8 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 
 		log.Printf("Loading Gateway for agent: %s (phase: %s)", entry.Name, entry.Phase)
 
-		// Load agent config from hostPath (with namespace subdirectory)
-		agentSpec, agentConfig, err := loadAgentFromHostPath(entry.Name, agentConfigDir, namespace)
+		// Load agent config from hostPath (Config Daemon writes to /etc/agent-config/<agent-name>/)
+		agentSpec, agentConfig, err := loadAgentFromHostPath(entry.Name, agentConfigDir)
 		if err != nil {
 			log.Printf("Error loading agent %s from hostPath: %v", entry.Name, err)
 			continue
@@ -581,10 +582,13 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 }
 
 // loadAgentFromHostPath loads agent config from hostPath directory.
-func loadAgentFromHostPath(agentName string, agentConfigDir string, namespace string) (*v1.AIAgentSpec, map[string]interface{}, error) {
+// Config Daemon writes: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json and agent-meta.yaml
+// But the mount is /var/lib/aiagent/configs/<namespace> -> /etc/agent-config
+// So inside Pod: /etc/agent-config/<agent-name>/agent-config.json
+func loadAgentFromHostPath(agentName string, agentConfigDir string) (*v1.AIAgentSpec, map[string]interface{}, error) {
 	// Read agent-meta.yaml for basic metadata
-	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-meta.yaml
-	metaPath := filepath.Join(agentConfigDir, namespace, agentName, "agent-meta.yaml")
+	// Path structure inside Pod: /etc/agent-config/<agent-name>/agent-meta.yaml
+	metaPath := filepath.Join(agentConfigDir, agentName, "agent-meta.yaml")
 	metaData, err := os.ReadFile(metaPath)
 	if err != nil {
 		if *debug {
@@ -617,8 +621,8 @@ func loadAgentFromHostPath(agentName string, agentConfigDir string, namespace st
 	}
 
 	// Read agent-config.json
-	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json
-	agentConfigPath := filepath.Join(agentConfigDir, namespace, agentName, "agent-config.json")
+	// Path structure inside Pod: /etc/agent-config/<agent-name>/agent-config.json
+	agentConfigPath := filepath.Join(agentConfigDir, agentName, "agent-config.json")
 	agentConfigData, err := os.ReadFile(agentConfigPath)
 	if err != nil {
 		if *debug {
