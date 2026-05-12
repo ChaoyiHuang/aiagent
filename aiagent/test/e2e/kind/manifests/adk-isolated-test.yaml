@@ -28,6 +28,7 @@
 apiVersion: agent.ai/v1
 kind: Harness
 metadata:
+  namespace: aiagent-system
   name: adk-isolated-model
 spec:
   type: model
@@ -46,6 +47,7 @@ spec:
 apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
+  namespace: aiagent-system
   name: adk-isolated-runtime
 spec:
   processMode: isolated
@@ -70,6 +72,7 @@ spec:
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
+  namespace: aiagent-system
   name: isolated-agent-1
   labels:
     runtime: adk-isolated-runtime
@@ -90,6 +93,7 @@ spec:
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
+  namespace: aiagent-system
   name: isolated-agent-2
   labels:
     runtime: adk-isolated-runtime
@@ -110,6 +114,7 @@ spec:
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
+  namespace: aiagent-system
   name: isolated-agent-3
   labels:
     runtime: adk-isolated-runtime

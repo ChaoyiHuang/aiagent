@@ -27,6 +27,7 @@ apiVersion: agent.ai/v1
 kind: Harness
 metadata:
   name: adk-shared-model
+  namespace: aiagent-system
 spec:
   type: model
   model:
@@ -45,6 +46,7 @@ apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
   name: adk-shared-runtime
+  namespace: aiagent-system
 spec:
   processMode: shared
 
@@ -69,6 +71,7 @@ apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: shared-agent-1
+  namespace: aiagent-system
   labels:
     runtime: adk-shared-runtime
 spec:
@@ -94,6 +97,7 @@ apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: shared-agent-2
+  namespace: aiagent-system
   labels:
     runtime: adk-shared-runtime
 spec:
