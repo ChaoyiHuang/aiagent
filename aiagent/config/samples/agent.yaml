@@ -8,6 +8,16 @@ spec:
   runtimeRef:
     name: adk-runtime-sample
     type: adk-go
+  # AgentConfig contains framework-specific configuration in JSON format
+  # ADK Handler will read this and generate ADK-specific agent.yaml
+  agentConfig:
+    instruction: "You are a helpful AI assistant specialized in general tasks."
+    model: "deepseek-chat"
+    tools:
+    - name: "search"
+      type: "web_search"
+    - name: "calculator"
+      type: "math"
   harnessOverride:
     model:
     - name: model-harness-deepseek
@@ -19,12 +29,6 @@ spec:
       - web-search
   volumePolicy: retain
   description: "Sample AI Agent using ADK-Go framework"
-  agentType: llm
-  tools:
-  - name: search
-    enabled: true
-  - name: calculator
-    enabled: true
 ---
 # Sample AIAgent using OpenClaw framework
 apiVersion: agent.ai/v1
@@ -36,22 +40,32 @@ spec:
   runtimeRef:
     name: openclaw-runtime-sample
     type: openclaw
+  # AgentConfig contains OpenClaw-specific configuration
+  # OpenClaw Handler will read this and start Gateway with internal agents
+  agentConfig:
+    gateway:
+      port: 18789
+      host: "0.0.0.0"
+    agents:
+    - name: weather
+      description: "Weather information agent"
+      model: "deepseek-chat"
+    - name: calculator
+      description: "Math calculation agent"
+      model: "deepseek-chat"
   volumePolicy: retain
   description: "Sample AI Agent using OpenClaw framework"
-  agentType: llm
 ---
-# Sample Sequential AIAgent with sub-agents
+# Sample AIAgent with minimal configuration
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
-  name: sequential-agent-sample
+  name: simple-agent-sample
   namespace: default
 spec:
   runtimeRef:
-    name: adk-runtime-sample
-    type: adk-go
-  description: "Sequential workflow agent"
-  agentType: sequential
-  subAgents:
-  - name: adk-agent-sample
-  volumePolicy: retain
+    type: adk-go  # Type-based auto scheduling
+  agentConfig:
+    instruction: "You are a simple AI assistant."
+    model: "deepseek-chat"
+  description: "Simple AI Agent with minimal config"

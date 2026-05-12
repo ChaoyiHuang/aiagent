@@ -175,10 +175,11 @@ func waitForCRDs(ctx context.Context, config *rest.Config) error {
 		group    string
 		version  string
 		resource string
+		kind     string
 	}{
-		{"agent.ai", "v1", "harnesses"},
-		{"agent.ai", "v1", "agentruntimes"},
-		{"agent.ai", "v1", "aigents"},
+		{"agent.ai", "v1", "harnesses", "HarnessList"},
+		{"agent.ai", "v1", "agentruntimes", "AgentRuntimeList"},
+		{"agent.ai", "v1", "aigents", "AIAgentList"},
 	}
 
 	for i := 0; i < 30; i++ {
@@ -187,7 +188,7 @@ func waitForCRDs(ctx context.Context, config *rest.Config) error {
 			gvk := schema.GroupVersionKind{
 				Group:   crd.group,
 				Version: crd.version,
-				Kind:    crd.resource[:len(crd.resource)-1] + "List", // harnesses -> harnessList
+				Kind:    crd.kind,
 			}
 			list := &unstructured.UnstructuredList{}
 			list.SetGroupVersionKind(gvk)

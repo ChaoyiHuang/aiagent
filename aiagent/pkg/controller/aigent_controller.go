@@ -9,6 +9,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -491,71 +492,106 @@ func (r *AIAgentReconciler) createAgentConfigMap(ctx context.Context, agent *v1.
 
 // generateAgentConfigYAML generates YAML config from AIAgent spec.
 func (r *AIAgentReconciler) generateAgentConfigYAML(agent *v1.AIAgent) string {
-	return fmt.Sprintf(`
-name: %s
-description: %s
-runtimeRef:
-  type: %s
-  name: %s
-volumePolicy: %s
-harnessOverride:
-  mcp:
-%s
-  memory:
-%s
-  sandbox:
-%s
-  skills:
-%s
-  model:
-%s
-`, agent.Name, agent.Spec.Description, agent.Spec.RuntimeRef.Type, agent.Spec.RuntimeRef.Name,
-		agent.Spec.VolumePolicy,
-		r.generateMCPOverrideYAML(agent.Spec.HarnessOverride.MCP),
-		r.generateMemoryOverrideYAML(agent.Spec.HarnessOverride.Memory),
-		r.generateSandboxOverrideYAML(agent.Spec.HarnessOverride.Sandbox),
-		r.generateSkillsOverrideYAML(agent.Spec.HarnessOverride.Skills),
-		r.generateModelOverrideYAML(agent.Spec.HarnessOverride.Model))
-}
-
-func (r *AIAgentReconciler) generateMCPOverrideYAML(overrides []v1.MCPOverrideSpec) string {
-	result := ""
-	for _, o := range overrides {
-		result += fmt.Sprintf("  - name: %s\n    deny: %v\n", o.Name, o.Deny)
+	// Build config as map for proper YAML serialization
+	config := map[string]interface{}{
+		"name":         agent.Name,
+		"description":  agent.Spec.Description,
+		"runtimeRef": map[string]string{
+			"type": agent.Spec.RuntimeRef.Type,
+			"name": agent.Spec.RuntimeRef.Name,
+		},
+		"volumePolicy": string(agent.Spec.VolumePolicy),
 	}
-	return result
-}
 
-func (r *AIAgentReconciler) generateMemoryOverrideYAML(overrides []v1.MemoryOverrideSpec) string {
-	result := ""
-	for _, o := range overrides {
-		result += fmt.Sprintf("  - name: %s\n", o.Name)
+	// Add AgentConfig if present (this is the key field for framework-specific config)
+	if agent.Spec.AgentConfig != nil && len(agent.Spec.AgentConfig.Raw) > 0 {
+		var agentConfigData map[string]interface{}
+		if err := json.Unmarshal(agent.Spec.AgentConfig.Raw, &agentConfigData); err == nil {
+			config["agentConfig"] = agentConfigData
+		}
 	}
-	return result
-}
 
-func (r *AIAgentReconciler) generateSandboxOverrideYAML(overrides []v1.SandboxOverrideSpec) string {
-	result := ""
-	for _, o := range overrides {
-		result += fmt.Sprintf("  - name: %s\n    deny: %v\n", o.Name, o.Deny)
-	}
-	return result
-}
+	// Add HarnessOverride if present
+	if len(agent.Spec.HarnessOverride.MCP) > 0 ||
+		len(agent.Spec.HarnessOverride.Memory) > 0 ||
+		len(agent.Spec.HarnessOverride.Sandbox) > 0 ||
+		len(agent.Spec.HarnessOverride.Skills) > 0 ||
+		len(agent.Spec.HarnessOverride.Model) > 0 {
+		harnessOverride := map[string]interface{}{}
 
-func (r *AIAgentReconciler) generateSkillsOverrideYAML(overrides []v1.SkillsOverrideSpec) string {
-	result := ""
-	for _, o := range overrides {
-		result += fmt.Sprintf("  - name: %s\n", o.Name)
-	}
-	return result
-}
+		if len(agent.Spec.HarnessOverride.MCP) > 0 {
+			mcpOverrides := []map[string]interface{}{}
+			for _, o := range agent.Spec.HarnessOverride.MCP {
+				mcpOverrides = append(mcpOverrides, map[string]interface{}{
+					"name":           o.Name,
+					"allowedServers": o.AllowedServers,
+					"deniedServers":  o.DeniedServers,
+					"deny":           o.Deny,
+				})
+			}
+			harnessOverride["mcp"] = mcpOverrides
+		}
 
-func (r *AIAgentReconciler) generateModelOverrideYAML(overrides []v1.ModelOverrideSpec) string {
-	result := ""
-	for _, o := range overrides {
-		result += fmt.Sprintf("  - name: %s\n", o.Name)
+		if len(agent.Spec.HarnessOverride.Memory) > 0 {
+			memoryOverrides := []map[string]interface{}{}
+			for _, o := range agent.Spec.HarnessOverride.Memory {
+				entry := map[string]interface{}{"name": o.Name}
+				if o.Config != nil && len(o.Config.Raw) > 0 {
+					var configData map[string]interface{}
+					if err := json.Unmarshal(o.Config.Raw, &configData); err == nil {
+						entry["config"] = configData
+					}
+				}
+				memoryOverrides = append(memoryOverrides, entry)
+			}
+			harnessOverride["memory"] = memoryOverrides
+		}
+
+		if len(agent.Spec.HarnessOverride.Sandbox) > 0 {
+			sandboxOverrides := []map[string]interface{}{}
+			for _, o := range agent.Spec.HarnessOverride.Sandbox {
+				sandboxOverrides = append(sandboxOverrides, map[string]interface{}{
+					"name": o.Name,
+					"deny": o.Deny,
+				})
+			}
+			harnessOverride["sandbox"] = sandboxOverrides
+		}
+
+		if len(agent.Spec.HarnessOverride.Skills) > 0 {
+			skillsOverrides := []map[string]interface{}{}
+			for _, o := range agent.Spec.HarnessOverride.Skills {
+				skillsOverrides = append(skillsOverrides, map[string]interface{}{
+					"name":          o.Name,
+					"allowedSkills": o.AllowedSkills,
+					"deniedSkills":  o.DeniedSkills,
+				})
+			}
+			harnessOverride["skills"] = skillsOverrides
+		}
+
+		if len(agent.Spec.HarnessOverride.Model) > 0 {
+			modelOverrides := []map[string]interface{}{}
+			for _, o := range agent.Spec.HarnessOverride.Model {
+				modelOverrides = append(modelOverrides, map[string]interface{}{
+					"name":           o.Name,
+					"allowedModels":  o.AllowedModels,
+					"deniedModels":   o.DeniedModels,
+				})
+			}
+			harnessOverride["model"] = modelOverrides
+		}
+
+		config["harnessOverride"] = harnessOverride
 	}
-	return result
+
+	// Convert to YAML
+	yamlData, err := yaml.Marshal(config)
+	if err != nil {
+		// Fallback to simple format
+		return fmt.Sprintf("name: %s\ndescription: %s\n", agent.Name, agent.Spec.Description)
+	}
+	return string(yamlData)
 }
 
 // createAgentPVC creates the agent's PVC if needed.
