@@ -227,13 +227,18 @@ func runHandler(ctx context.Context, h *adk.ADKHandler, harnessDir string, agent
 	// Track loaded agents
 	loadedAgents := make(map[string]bool)
 
+	// Track agent index state to reduce log noise
+	lastIndexSize := -1
+	notFoundCount := 0
+	notFoundLogInterval := 12 // Log every 12 intervals (~1 minute at 5s interval)
+
 	// Poll interval
 	pollInterval := 5 * time.Second
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	// Initial load
-	loadAgentsFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedAgents, processMode)
+	loadAgentsFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedAgents, processMode, &lastIndexSize, &notFoundCount, notFoundLogInterval)
 
 	for {
 		select {
@@ -243,7 +248,7 @@ func runHandler(ctx context.Context, h *adk.ADKHandler, harnessDir string, agent
 
 		case <-ticker.C:
 			// Poll for changes
-			loadAgentsFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedAgents, processMode)
+			loadAgentsFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedAgents, processMode, &lastIndexSize, &notFoundCount, notFoundLogInterval)
 
 			// Check process health
 			checkProcessHealth(ctx, h, processMode)
@@ -490,13 +495,15 @@ func buildHarnessConfig(mgr *harness.HarnessManager) *handler.HarnessConfig {
 }
 
 // loadAgentsFromIndex loads agents from agent-index.yaml (written by Config Daemon).
-func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedAgents map[string]bool, processMode handler.ProcessModeType) {
+func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedAgents map[string]bool, processMode handler.ProcessModeType, lastIndexSize *int, notFoundCount *int, notFoundLogInterval int) {
 	// Read agent index (written by Config Daemon)
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if *debug {
-				log.Printf("Agent index not found at %s, waiting for Config Daemon", indexPath)
+			*notFoundCount++
+			// Only log at interval to reduce noise
+			if *notFoundCount == 1 || *notFoundCount%notFoundLogInterval == 0 {
+				log.Printf("Agent index not found at %s, waiting for Config Daemon (check #%d)", indexPath, *notFoundCount)
 			}
 			return
 		}
@@ -504,13 +511,21 @@ func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath strin
 		return
 	}
 
+	// Reset not found count when file exists
+	*notFoundCount = 0
+
 	var index AgentIndex
 	if err := yaml.Unmarshal(data, &index); err != nil {
 		log.Printf("Error parsing agent index: %v", err)
 		return
 	}
 
-	log.Printf("AgentIndex contains %d agents", len(index.Agents))
+	// Only log when index size changes
+	currentSize := len(index.Agents)
+	if currentSize != *lastIndexSize {
+		log.Printf("AgentIndex contains %d agents (changed from %d)", currentSize, *lastIndexSize)
+		*lastIndexSize = currentSize
+	}
 
 	// Process each agent in the index
 	for _, entry := range index.Agents {
@@ -518,8 +533,8 @@ func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath strin
 			continue // Already loaded
 		}
 
-		// Only load agents in Running or Pending phase
-		if entry.Phase != "Running" && entry.Phase != "Pending" {
+		// Only load agents in Running, Pending, or Scheduling phase
+		if entry.Phase != "Running" && entry.Phase != "Pending" && entry.Phase != "Scheduling" {
 			continue
 		}
 
@@ -548,6 +563,14 @@ func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath strin
 
 		log.Printf("Generated config for %s at %s", entry.Name, configPath)
 
+		// Register agent with handler (this makes AgentCount accurate)
+		ag, err := h.LoadAgent(ctx, agentSpec, harnessCfg)
+		if err != nil {
+			log.Printf("Warning: failed to register agent %s: %v", entry.Name, err)
+		} else {
+			log.Printf("Registered agent %s with handler", entry.Name)
+		}
+
 		// Start Framework process based on process mode
 		if processMode == handler.ProcessModeIsolated {
 			// Isolated mode: start Framework process for each agent
@@ -568,6 +591,11 @@ func loadAgentsFromIndex(ctx context.Context, h *adk.ADKHandler, indexPath strin
 				}
 				log.Printf("Started shared Framework process")
 			}
+		}
+
+		// Mark agent phase as Running
+		if ag != nil {
+			h.StartAgent(ctx, ag, nil)
 		}
 
 		loadedAgents[entry.Name] = true

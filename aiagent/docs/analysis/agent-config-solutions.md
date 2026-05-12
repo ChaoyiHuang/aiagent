@@ -1,11 +1,59 @@
 # Agent ConfigMap 信息流问题 - 方案对比分析
 
-## 问题核心
+## 实现状态 (2026-05-12)
 
-Handler 启动 Framework 需要读取 Agent ConfigMap，但当前设计中存在时序问题：
+**已采用方案: Solution M (Config Daemon)**
+
+Config Daemon方案已实现并通过E2E测试验证。该方案通过hostPath + DaemonSet模式解决了时序问题，Handler无需K8s API权限即可获取Agent配置。
+
+---
+
+## 已实现方案: Config Daemon (Solution M)
+
+### 实现架构
 
 ```
-时序流程:
+Config Daemon (DaemonSet on all nodes)
+├── Watches AIAgent CRDs via Informer
+├── Writes to hostPath: /var/lib/aiagent/configs/<namespace>/<agent-name>/
+│   ├── agent-config.json
+│   └── agent-meta.yaml
+├── Creates agent-index.yaml in namespace directory
+│
+Pod (AgentRuntime)
+├── Mounts hostPath as /etc/agent-config
+└── Handler reads agent-index.yaml to discover agents
+```
+
+### 实现文件
+
+| 文件 | 功能 |
+|------|------|
+| `cmd/config-daemon/main.go` | Config Daemon实现 |
+| `pkg/controller/agentruntime_controller.go` | hostPath Volume配置 |
+| `Dockerfile.config-daemon` | Daemon镜像 |
+
+### 优势
+
+1. **无RBAC需求**: Handler不需要K8s API访问权限
+2. **时序解耦**: Pod创建时hostPath已准备，不受binding时序影响
+3. **动态支持**: 新增Agent只需更新CRD，Daemon自动同步
+4. **兼容性**: 与ShareProcessNamespace和ImageVolume模式完全兼容
+
+### E2E测试验证
+
+- ✓ ADK Shared模式: 2 AIAgents → 1 Framework进程
+- ✓ ADK Isolated模式: 3 AIAgents → 3 Framework进程
+- ✓ OpenClaw Gateway模式: 2 AIAgents → 2 Gateway进程
+
+---
+
+## 问题核心 (已解决)
+
+Handler启动Framework需要读取Agent ConfigMap，但原始设计中存在时序问题：
+
+```
+原始时序流程:
 1. AgentRuntime Controller 创建 Pod (此时 runtime.Status.Agents 为空)
 2. Pod Running → Runtime phase = "Running"
 3. AIAgent Controller 检测到 Runtime Running → 开始 binding
@@ -13,7 +61,7 @@ Handler 启动 Framework 需要读取 Agent ConfigMap，但当前设计中存在
 5. Handler 尝试读取 Agent ConfigMap → 路径为空或 ConfigMap 不存在
 ```
 
-**核心矛盾**: Pod 创建先于 Agent binding，无法在 Pod spec 中挂载尚未创建的 Agent ConfigMap。
+**Config Daemon解决方案**: 将Agent配置写入hostPath，Pod通过hostPath挂载获取配置，绕过ConfigMap挂载的时序依赖。
 
 ---
 

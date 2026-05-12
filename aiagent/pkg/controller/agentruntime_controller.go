@@ -387,12 +387,34 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 		return nil, err
 	}
 
-	if !reflect.DeepEqual(existingPod.Spec, pod.Spec) {
-		log.Info("Updating AgentRuntime Pod", "name", podName)
-		existingPod.Spec = pod.Spec
-		if err := r.Update(ctx, existingPod); err != nil {
+	// Pod already exists - check if we need to recreate it
+	// We only recreate if critical fields changed (image, command)
+	// Don't try to update in-place as Kubernetes doesn't allow changing many fields
+	needsRecreate := false
+	if len(existingPod.Spec.Containers) != len(pod.Spec.Containers) {
+		needsRecreate = true
+	} else {
+		for i, c := range pod.Spec.Containers {
+			if existingPod.Spec.Containers[i].Image != c.Image {
+				needsRecreate = true
+				break
+			}
+			// Check command changes (for framework dummy container)
+			if len(c.Command) > 0 && !reflect.DeepEqual(existingPod.Spec.Containers[i].Command, c.Command) {
+				needsRecreate = true
+				break
+			}
+		}
+	}
+
+	if needsRecreate && existingPod.DeletionTimestamp == nil {
+		log.Info("Recreating AgentRuntime Pod due to spec changes", "name", podName)
+		// Delete the existing pod
+		if err := r.Delete(ctx, existingPod); err != nil {
 			return nil, err
 		}
+		// Return error to trigger re-reconciliation
+		return nil, fmt.Errorf("pod needs recreation, deleted existing pod")
 	}
 
 	return existingPod, nil
@@ -424,7 +446,7 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // │                                                                 │
 // │  Framework Container (dummy - provides image content only)     │
 // │  ┌────────────────────────────────────────────────────────────┐│
-// │  │ - ENTRYPOINT: pause (just sleeps, no active process)       ││
+// │  │ - ENTRYPOINT: sleep infinity (just sleeps, no active process)││
 // │  │ - Provides image content for ImageVolume                   ││
 // │  │ - Does NOT run Framework processes                         ││
 // │  │ - Handler manages Framework processes                      ││
@@ -571,17 +593,17 @@ func (r *AgentRuntimeReconciler) buildContainerFromHandlerSpec(name string, spec
 // This container does NOT run Framework processes - it only provides the image content
 // for the ImageVolume. The Handler Container is the process manager.
 func (r *AgentRuntimeReconciler) buildFrameworkDummyContainer(name string, spec v1.AgentFrameworkSpec) corev1.Container {
-	// Use "pause" as the entrypoint - a minimal process that just sleeps forever
+	// Use "sleep infinity" as the entrypoint - a minimal process that sleeps forever
 	// The container's filesystem content is exposed via ImageVolume to Handler
 	// Handler Container starts actual Framework processes using /framework-rootfs/<binary>
 	return corev1.Container{
 		Name:    name,
 		Image:   spec.Image,
-		Command: []string{"pause"}, // Minimal process that sleeps forever
+		Command: []string{"sleep", "infinity"}, // Minimal process that sleeps forever
 		Args:    []string{},
 		SecurityContext: &corev1.SecurityContext{
 			Privileged:             boolPtr(false),
-			RunAsNonRoot:           boolPtr(false), // pause needs root
+			RunAsNonRoot:           boolPtr(false), // sleep needs root
 			ReadOnlyRootFilesystem: boolPtr(false),
 		},
 		// No volumeMounts - this container is just a dummy for ImageVolume

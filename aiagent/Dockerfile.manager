@@ -1,16 +1,21 @@
 # Dockerfile for AI Agent Controller Manager
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /workspace
 
-# Copy go.mod and go.sum
-COPY go.mod go.sum ./
+# Copy adk-go module first (for local replace directive)
+COPY adk-go/ /adk-go/
+
+# Copy aiagent module
+COPY aiagent/go.mod aiagent/go.sum ./
+
+# Download dependencies
 RUN go mod download
 
 # Copy source code
-COPY api/ api/
-COPY pkg/ pkg/
-COPY cmd/ cmd/
+COPY aiagent/api/ api/
+COPY aiagent/pkg/ pkg/
+COPY aiagent/cmd/ cmd/
 
 # Build manager binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager ./cmd/manager

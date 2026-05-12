@@ -36,6 +36,7 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -324,10 +325,17 @@ func (d *ConfigDaemon) onAgentDelete(obj interface{}) {
 
 // parseAgentInfo extracts AgentInfo from unstructured object.
 func (d *ConfigDaemon) parseAgentInfo(obj interface{}) (*AgentInfo, error) {
-	// Handle unstructured object directly
+	// Handle unstructured.Unstructured type (from dynamic informer)
+	unstruct, ok := obj.(*unstructured.Unstructured)
+	if ok {
+		// Use UnstructuredContent() to get the map
+		return d.parseAgentFromMap(unstruct.UnstructuredContent(), unstruct.GetNamespace(), unstruct.GetName(), unstruct.GetUID())
+	}
+
+	// Handle map[string]interface{} directly (for tests or other cases)
 	unstructMap, ok := obj.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("unexpected object type: cannot convert to map")
+		return nil, fmt.Errorf("unexpected object type: %T, expected *unstructured.Unstructured or map[string]interface{}", obj)
 	}
 
 	// Extract name and namespace from metadata

@@ -219,9 +219,9 @@ func TestAgentRuntimeReconciler_BuildPodSpec(t *testing.T) {
 		t.Errorf("expected framework image framework:v1, got %s", podSpec.Containers[1].Image)
 	}
 
-	// Verify framework container is DUMMY (pause command)
-	if len(podSpec.Containers[1].Command) == 0 || podSpec.Containers[1].Command[0] != "pause" {
-		t.Errorf("expected framework container to have 'pause' command (dummy container)")
+	// Verify framework container is DUMMY (sleep infinity command)
+	if len(podSpec.Containers[1].Command) < 2 || podSpec.Containers[1].Command[0] != "sleep" || podSpec.Containers[1].Command[1] != "infinity" {
+		t.Errorf("expected framework container to have 'sleep infinity' command (dummy container)")
 	}
 
 	// Verify ShareProcessNamespace is enabled

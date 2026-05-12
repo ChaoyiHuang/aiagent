@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the ImageVolume architecture for AgentRuntime Pods, which solves the filesystem isolation problem between Handler and Framework containers.
+This document describes the ImageVolume architecture for AgentRuntime Pods, which solves the filesystem isolation problem between Handler and Framework containers. This architecture has been **verified in E2E tests** with Kubernetes 1.35.
 
 ## Problem
 
@@ -14,7 +14,7 @@ In the original design, Handler Container and Framework Container share PID name
 
 ## Solution: ImageVolume (KEP-127)
 
-Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to be mounted as a volume. This enables Handler Container to access Framework's complete filesystem.
+Kubernetes 1.35+ introduces ImageVolume feature (enabled by default), allowing a container image to be mounted as a volume. This enables Handler Container to access Framework's complete filesystem.
 
 ### Architecture
 
@@ -28,6 +28,7 @@ Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to b
 │  │   /framework-rootfs -> ImageVolume (Framework image)       ││
 │  │   /etc/harness/<name> -> Harness ConfigMaps                ││
 │  │   /shared/workdir -> EmptyDir (agent workspace)            ││
+│  │   /etc/agent-config -> hostPath (Config Daemon)            ││
 │  │                                                            ││
 │  │ Handler starts Framework processes:                        ││
 │  │   ADK: exec.Command("/framework-rootfs/adk-framework")     ││
@@ -39,12 +40,13 @@ Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to b
 │                                                                 │
 │  Framework Container (DUMMY - provides image content only)     │
 │  ┌────────────────────────────────────────────────────────────┐│
-│  │ ENTRYPOINT: pause (minimal process that sleeps forever)    ││
+│  │ ENTRYPOINT: ["sleep", "infinity"]                          ││
 │  │                                                            ││
 │  │ Provides image content for ImageVolume:                    ││
 │  │   - Framework binaries (adk-framework, openclaw)           ││
-│  │   - Runtime dependencies (Node.js, Go, etc.)               ││
+│  │   - Runtime dependencies (Go 1.25, Node.js, etc.)          ││
 │  │   - Framework libraries and configurations                 ││
+│  │   - adk-go library (for ADK integration)                   ││
 │  │                                                            ││
 │  │ Does NOT run any Framework processes                       ││
 │  │ Handler manages all Framework processes                    ││
@@ -53,6 +55,10 @@ Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to b
 │  ShareProcessNamespace: true                                   │
 │  - Handler can see/ctrl Framework processes                    │
 │  - Handler is the process manager                              │
+│                                                                 │
+│  ImageVolume Configuration:                                    │
+│  │   reference: aiagent/adk-framework:test                    ││
+│  │   pullPolicy: IfNotPresent                                  ││
 │                                                                 │
 │  ShareNetworkNamespace: true (implicit in Pod)                 │
 │  - Handler and Framework processes share localhost             │
@@ -69,7 +75,7 @@ Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to b
 
 2. **Framework Container is minimal**
    - Only provides image content for ImageVolume
-   - Uses `pause` entrypoint (sleeps forever)
+   - Uses `sleep infinity` entrypoint (native Alpine command)
    - No active Framework processes running in Framework Container
 
 3. **Filesystem access**
@@ -82,6 +88,11 @@ Kubernetes 1.31+ introduces ImageVolume feature, allowing a container image to b
    - ImageVolume references Framework image dynamically
    - No coupling between Handler and Framework binaries
 
+5. **ADK-Go Library Integration**
+   - adk-framework imports adk-go via local replace directive
+   - Framework creates real agents using `llmagent.New()`
+   - Runner executes agents with proper session management
+
 ### Implementation Details
 
 #### Controller (pkg/controller/agentruntime_controller.go)
@@ -93,6 +104,7 @@ frameworkImageVolume := corev1.Volume{
     VolumeSource: corev1.VolumeSource{
         Image: &corev1.ImageVolumeSource{
             Reference: runtime.Spec.AgentFramework.Image,
+            PullPolicy: corev1.PullIfNotPresent,
         },
     },
 }
@@ -102,54 +114,82 @@ handlerVolumeMounts = append(handlerVolumeMounts,
     corev1.VolumeMount{Name: "framework-image", MountPath: "/framework-rootfs"},
 )
 
-// Framework Container is DUMMY (pause process only)
+// Framework Container is DUMMY (sleep infinity)
 func (r *AgentRuntimeReconciler) buildFrameworkDummyContainer(name string, spec v1.AgentFrameworkSpec) corev1.Container {
     return corev1.Container{
         Name:    name,
         Image:   spec.Image,
-        Command: []string{"pause"}, // Minimal process that sleeps forever
+        Command: []string{"sleep", "infinity"},
     }
 }
 ```
 
-#### Handler Dockerfile (Dockerfile.adk-handler, Dockerfile.openclaw-handler)
+#### Handler Dockerfile (Dockerfile.adk-handler)
 
 ```dockerfile
-# Framework binary path via ImageVolume
+FROM golang:1.25-alpine AS builder
+WORKDIR /workspace
+
+# Copy adk-go module for local replace
+COPY adk-go/ /adk-go/
+
+# Copy aiagent module
+COPY aiagent/go.mod aiagent/go.sum ./
+RUN go mod download
+
+COPY aiagent/api/ api/
+COPY aiagent/pkg/ pkg/
+COPY aiagent/cmd/ cmd/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o adk-handler ./cmd/adk-handler
+
+FROM alpine:3.18
+COPY --from=builder /workspace/adk-handler /adk-handler
+
 ENV FRAMEWORK_BIN=/framework-rootfs/adk-framework
-# or for OpenClaw:
-ENV FRAMEWORK_BIN=/framework-rootfs/usr/local/bin/openclaw
+ENV WORK_DIR=/shared/workdir
+ENV CONFIG_DIR=/shared/config
+
+ENTRYPOINT ["/adk-handler"]
 ```
 
-#### Framework Dockerfile (Dockerfile.adk-framework, Dockerfile.openclaw-framework)
+#### Framework Dockerfile (Dockerfile.adk-framework)
 
 ```dockerfile
-# DUMMY entrypoint - just sleep forever
-ENTRYPOINT ["/pause"]
+FROM golang:1.25-alpine AS builder
+WORKDIR /workspace
 
-# Provides binaries for Handler to use:
-# ADK: /adk-framework
-# OpenClaw: /usr/local/bin/openclaw
+# Copy adk-go module (for local replace directive)
+COPY adk-go/ /adk-go/
+
+# Copy aiagent module
+COPY aiagent/go.mod aiagent/go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY aiagent/cmd/ cmd/
+
+# Build ADK Framework binary (with adk-go integration)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o adk-framework ./cmd/adk-framework
+
+FROM alpine:3.18
+COPY --from=builder /workspace/adk-framework /adk-framework
+
+# DUMMY entrypoint - just sleep forever
+ENTRYPOINT ["sleep", "infinity"]
 ```
 
 ### Requirements
 
-- Kubernetes 1.31+ (ImageVolume feature gate enabled by default)
+- Kubernetes 1.35+ (ImageVolume feature gate enabled by default)
+- Go 1.25+ (adk-go library requires Go 1.25)
 - containerd 1.7+ (runtime support for ImageVolume)
 
-### Cleanup
+### E2E Test Verification
 
-Removed old components:
-- `Dockerfile.init-container` (deleted)
-- `scripts/init-mount.sh` (deleted)
-- InitContainer in Pod spec (removed)
-- Bind mount setup logic (removed)
-
-### Testing
-
-Controller tests verify:
-- No init containers (ImageVolume pattern doesn't need them)
-- Framework Container has `pause` command (dummy container)
-- ImageVolume is configured for Framework image
-- Handler mounts ImageVolume at `/framework-rootfs`
-- ShareProcessNamespace is enabled
+Tests verify:
+- ✓ ImageVolume configured with proper pullPolicy (IfNotPresent)
+- ✓ Framework Container has `sleep infinity` command (DUMMY)
+- ✓ ShareProcessNamespace enabled
+- ✓ Handler shows correct agent count in status logs
+- ✓ All 3 process modes work: ADK Shared, ADK Isolated, OpenClaw Gateway

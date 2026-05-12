@@ -131,42 +131,43 @@ build_images() {
     echo "Building Docker Images"
     echo "=================================================="
 
-    cd "${PROJECT_ROOT}"
+    # Build from parent directory to include adk-go in context
+    cd "${PROJECT_ROOT}/.."
 
     # Build Manager image
     echo ">>> Building aiagent/manager:test..."
     docker build -t aiagent/manager:test \
-        -f Dockerfile.manager \
+        -f aiagent/Dockerfile.manager \
         . || { echo "ERROR: Failed to build manager"; return 1; }
 
     # Build ADK Framework image (DUMMY container)
     echo ">>> Building aiagent/adk-framework:test..."
     docker build -t aiagent/adk-framework:test \
-        -f Dockerfile.adk-framework \
+        -f aiagent/Dockerfile.adk-framework \
         . || { echo "ERROR: Failed to build adk-framework"; return 1; }
 
     # Build ADK Handler image
     echo ">>> Building aiagent/adk-handler:test..."
     docker build -t aiagent/adk-handler:test \
-        -f Dockerfile.adk-handler \
+        -f aiagent/Dockerfile.adk-handler \
         . || { echo "ERROR: Failed to build adk-handler"; return 1; }
 
     # Build OpenClaw Framework image (DUMMY container)
     echo ">>> Building aiagent/openclaw-framework:test..."
     docker build -t aiagent/openclaw-framework:test \
-        -f Dockerfile.openclaw-framework \
-        . || { echo "ERROR: Failed to build openclaw-framework"; return 1; }
+        -f aiagent/Dockerfile.openclaw-framework \
+        aiagent || { echo "ERROR: Failed to build openclaw-framework"; return 1; }
 
     # Build OpenClaw Handler image
     echo ">>> Building aiagent/openclaw-handler:test..."
     docker build -t aiagent/openclaw-handler:test \
-        -f Dockerfile.openclaw-handler \
+        -f aiagent/Dockerfile.openclaw-handler \
         . || { echo "ERROR: Failed to build openclaw-handler"; return 1; }
 
     # Build Config Daemon image
     echo ">>> Building aiagent/config-daemon:test..."
     docker build -t aiagent/config-daemon:test \
-        -f Dockerfile.config-daemon \
+        -f aiagent/Dockerfile.config-daemon \
         . || { echo "ERROR: Failed to build config-daemon"; return 1; }
 
     echo ""
@@ -445,11 +446,11 @@ verify_adk_shared() {
 
     # Check DUMMY Framework container
     FW_CMD=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.containers[?(@.name=="agent-framework")].command[0]}' 2>/dev/null)
-    if [ "$FW_CMD" != "pause" ]; then
-        echo "    ❌ ERROR: Framework container should have 'pause' command (DUMMY)"
+    if [ "$FW_CMD" != "sleep" ]; then
+        echo "    ❌ ERROR: Framework container should have 'sleep' command (DUMMY)"
         return 1
     fi
-    echo "    ✓ Framework container: DUMMY (pause)"
+    echo "    ✓ Framework container: DUMMY (sleep infinity)"
 
     # Check ShareProcessNamespace
     SHARE_PID=$(kubectl get pod ${POD_NAME} -n ${NS} -o jsonpath='{.spec.shareProcessNamespace}' 2>/dev/null)
@@ -605,41 +606,39 @@ run_tests() {
         TEST_FAIL=$((TEST_FAIL + 1))
     fi
 
-    # TODO: Test 2: ADK Isolated Mode - temporarily disabled
-    # Will be enabled after verifying Test 1 works correctly
-    # echo ""
-    # echo ">>> Test 2: ADK Isolated Process Mode"
-    # echo "    (Each AIAgent CRD → Separate Framework Process)"
-    # kubectl apply -f "${SCRIPT_DIR}/manifests/adk-isolated-test.yaml"
-    #
-    # # Wait for AgentRuntime to be processed by controller
-    # echo "    Waiting for AgentRuntime to be ready..."
-    # kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-isolated-runtime --timeout=120s || true
-    # sleep 10
-    #
-    # if verify_adk_isolated; then
-    #     TEST_PASS=$((TEST_PASS + 1))
-    # else
-    #     TEST_FAIL=$((TEST_FAIL + 1))
-    # fi
+    # Test 2: ADK Isolated Mode
+    echo ""
+    echo ">>> Test 2: ADK Isolated Process Mode"
+    echo "    (Each AIAgent CRD → Separate Framework Process)"
+    kubectl apply -f "${SCRIPT_DIR}/manifests/adk-isolated-test.yaml"
 
-    # TODO: Test 3: OpenClaw Multiple Gateway Mode - temporarily disabled
-    # Will be enabled after verifying Test 1 works correctly
-    # echo ""
-    # echo ">>> Test 3: OpenClaw Multiple Gateway Mode"
-    # echo "    (Each AIAgent CRD → Gateway Process with internal agents)"
-    # kubectl apply -f "${SCRIPT_DIR}/manifests/openclaw-gateway-test.yaml"
-    #
-    # # Wait for AgentRuntime to be processed by controller
-    # echo "    Waiting for AgentRuntime to be ready..."
-    # kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/openclaw-runtime --timeout=120s || true
-    # sleep 10
-    #
-    # if verify_openclaw; then
-    #     TEST_PASS=$((TEST_PASS + 1))
-    # else
-    #     TEST_FAIL=$((TEST_FAIL + 1))
-    # fi
+    # Wait for AgentRuntime to be processed by controller
+    echo "    Waiting for AgentRuntime to be ready..."
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/adk-isolated-runtime -n aiagent-system --timeout=120s || true
+    sleep 10
+
+    if verify_adk_isolated; then
+        TEST_PASS=$((TEST_PASS + 1))
+    else
+        TEST_FAIL=$((TEST_FAIL + 1))
+    fi
+
+    # Test 3: OpenClaw Multiple Gateway Mode
+    echo ""
+    echo ">>> Test 3: OpenClaw Multiple Gateway Mode"
+    echo "    (Each AIAgent CRD → Gateway Process with internal agents)"
+    kubectl apply -f "${SCRIPT_DIR}/manifests/openclaw-gateway-test.yaml"
+
+    # Wait for AgentRuntime to be processed by controller
+    echo "    Waiting for AgentRuntime to be ready..."
+    kubectl wait --for=jsonpath='{.status.phase}'=Running agentruntime/openclaw-runtime -n aiagent-system --timeout=120s || true
+    sleep 10
+
+    if verify_openclaw; then
+        TEST_PASS=$((TEST_PASS + 1))
+    else
+        TEST_FAIL=$((TEST_FAIL + 1))
+    fi
 
     # Summary
     echo ""
@@ -648,7 +647,6 @@ run_tests() {
     echo "=================================================="
     echo "    Passed: ${TEST_PASS}"
     echo "    Failed: ${TEST_FAIL}"
-    echo "    Note: Test 2 (ADK Isolated) and Test 3 (OpenClaw) temporarily disabled"
     echo "=================================================="
 
     if [ "$TEST_FAIL" -gt 0 ]; then

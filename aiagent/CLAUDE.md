@@ -4,6 +4,11 @@
 
 This project implements a Kubernetes-native abstraction layer for running AI agents from multiple frameworks (ADK-Go, OpenClaw, LangChain, etc.) in a unified manner. It defines three core CRD objects that abstract any AI agent framework while externalizing platform engineering capabilities.
 
+**E2E Tests Verified (2026-05-12)**:
+- ✓ ADK Shared Mode: 2 AIAgents → 1 Framework process
+- ✓ ADK Isolated Mode: 3 AIAgents → 3 Framework processes  
+- ✓ OpenClaw Gateway Mode: 2 AIAgents → 2 Gateway processes
+
 ## Architecture Layers
 
 ```
@@ -81,10 +86,10 @@ Framework-agnostic controllers that manage CRD lifecycles.
 **AgentRuntimeReconciler (`agentruntime_controller.go`):**
 - Creates/updates Pods based on AgentRuntime spec
 - Resolves Harness references to ConfigMaps
-- Uses ImageVolume pattern (K8s 1.36+) to mount Framework image to Handler
+- Uses ImageVolume pattern (K8s 1.35+) to mount Framework image to Handler
 - `ShareProcessNamespace: true` for Handler to manage Framework processes
 
-**Pod Architecture:**
+**Pod Architecture (ImageVolume Pattern - Verified):**
 ```
 Pod (AgentRuntime)
 ├── Handler Container (process manager)
@@ -94,11 +99,13 @@ Pod (AgentRuntime)
 │       ├── /framework-rootfs -> ImageVolume (Framework image)
 │       ├── /etc/harness/<name> -> Harness ConfigMaps
 │       ├── /shared/workdir -> EmptyDir (agent workspace)
-│       └── /shared/config -> EmptyDir (runtime configs)
+│       ├── /shared/config -> EmptyDir (runtime configs)
+│       └── /etc/agent-config -> hostPath (Config Daemon)
 │
-└── Framework Container (dummy - provides image content only)
-│   └── ENTRYPOINT: pause (just sleeps)
+└── Framework Container (DUMMY)
+│   └── ENTRYPOINT: sleep infinity (just sleeps)
 │   └── Provides image content for ImageVolume
+│   └── Contains adk-go library integration
 ```
 
 ### `pkg/handler/` - Handler Interface
@@ -139,20 +146,20 @@ type Handler interface {
 
 **HandlerTypes:** `adk | openclaw | langchain | hermes | custom`
 
-### `pkg/handler/adk/` - ADK-Go Handler
+### `pkg/handler/adk/` - ADK-Go Handler (Verified)
 
 Supports two process modes:
-- **shared**: Single Framework process, multiple agents in same process
-- **isolated**: Each agent runs in its own Framework process
+- **shared**: Single Framework process, multiple agents in same process (tested: 2 agents → 1 process)
+- **isolated**: Each agent runs in its own Framework process (tested: 3 agents → 3 processes)
 
 **Key Files:**
 - `handler.go`: Main handler implementation
 - `converter.go`: Converts AIAgentSpec to ADK YAML config
 
-### `pkg/handler/openclaw/` - OpenClaw Handler
+### `pkg/handler/openclaw/` - OpenClaw Handler (Verified)
 
 OpenClaw Gateway architecture:
-- Each AIAgent → One Gateway process (isolated mode)
+- Each AIAgent → One Gateway process (tested: 2 agents → 2 gateway processes)
 - Handler manages multiple Gateway instances
 - Communicates via HTTP API with Gateway
 
@@ -161,6 +168,66 @@ OpenClaw Gateway architecture:
 - `converter.go`: Converts to openclaw.json config
 - `bridge.go`: HTTP communication with Gateway
 - `plugin_generator.go`: Generates harness-bridge plugins
+
+### `cmd/adk-framework/` - ADK Framework with adk-go Integration
+
+The adk-framework now integrates with adk-go library:
+
+```go
+import (
+    adkagent "google.golang.org/adk/agent"
+    "google.golang.org/adk/agent/llmagent"
+    "google.golang.org/adk/runner"
+    "google.golang.org/adk/session"
+)
+
+// Create agent using adk-go
+agent, err := llmagent.New(llmagent.Config{
+    Name:        config.Name,
+    Model:       model,  // customModel implements model.LLM interface
+    Description: config.Description,
+    Instruction: instruction,
+})
+
+// Execute via runner
+r, err := runner.New(runner.Config{
+    Agent:           rootAgent,
+    SessionService:  session.InMemoryService(),
+    AutoCreateSession: true,
+})
+
+for event, err := range r.Run(ctx, userID, sessionID, msg, runConfig) {
+    // Process events
+}
+```
+
+**JSON-RPC Methods:**
+- `agent.run`: Execute agent with user message
+- `agent.status`: Query agent status
+- `agent.list`: List all agents
+- `framework.status`: Framework health info
+
+### `cmd/config-daemon/` - Config Daemon (Solution M)
+
+Config Daemon watches AIAgent CRDs and syncs AgentConfig to hostPath:
+
+```
+Config Daemon (DaemonSet on all nodes)
+├── Watches AIAgent CRDs via Informer
+├── Writes to hostPath: /var/lib/aiagent/configs/<namespace>/<agent-name>/
+│   ├── agent-config.json
+│   └── agent-meta.yaml
+├── Creates agent-index.yaml in namespace directory
+│
+Pod (AgentRuntime)
+├── Mounts hostPath as /etc/agent-config
+└── Handler reads agent-index.yaml to discover agents
+```
+
+**Benefits:**
+- Handler doesn't need K8s API access
+- No RBAC permissions required for Handler
+- Works with ShareProcessNamespace pattern
 
 ### `pkg/harness/` - Harness Manager
 
@@ -217,7 +284,7 @@ type Agent interface {
 | Source | Mount Path |
 |--------|-----------|
 | Runtime agentConfig | `/etc/agent-config/runtime/` |
-| AIAgent agentConfig | `/etc/agent-config/agent/` |
+| AIAgent agentConfig | `/etc/agent-config/agent/<name>/` |
 | Harness ConfigMaps | `/etc/harness/<harness-name>/` |
 | Shared workspace | `/shared/workdir/` |
 | Shared config | `/shared/config/` |
@@ -251,21 +318,24 @@ spec:
       allowed: true
 ```
 
-### AgentRuntime Example
+### AgentRuntime Example (ADK Isolated Mode)
 ```yaml
 apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
-  name: adk-runtime-sample
+  name: adk-isolated-runtime
 spec:
-  agentHandler:
-    image: aiagent/adk-handler:latest
-  agentFramework:
-    image: aiagent/adk-framework:latest
-    type: adk-go
-  harness:
-  - name: model-harness-deepseek
   processMode: isolated
+  agentHandler:
+    image: aiagent/adk-handler:test
+    env:
+    - name: PROCESS_MODE
+      value: isolated
+  agentFramework:
+    image: aiagent/adk-framework:test
+    type: adk
+  harness:
+  - name: adk-model
   replicas: 1
 ```
 
@@ -274,18 +344,17 @@ spec:
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
-  name: adk-agent-sample
+  name: isolated-agent-1
+  labels:
+    runtime: adk-isolated-runtime
 spec:
+  description: "Agent with isolated process"
   runtimeRef:
-    name: adk-runtime-sample
-    type: adk-go
-  harnessOverride:
-    model:
-    - name: model-harness-deepseek
-      allowedModels:
-      - deepseek-chat
-  volumePolicy: retain
-  description: "Sample AI Agent"
+    type: adk
+    name: adk-isolated-runtime
+  agentConfig:
+    instruction: "You are a specialized AI assistant."
+    model: "deepseek-chat"
 ```
 
 ## Extending with New Frameworks
@@ -300,6 +369,7 @@ To add a new framework (e.g., Hermes):
 3. Create converter for AIAgentSpec → Hermes config
 4. Register in handler registry (if used)
 5. Create Dockerfile for handler image
+6. Create E2E test case in `test/e2e/kind/manifests/`
 
 ## Testing
 
@@ -307,16 +377,17 @@ To add a new framework (e.g., Hermes):
 # Unit tests
 make test-unit
 
-# Integration tests (requires envtest)
-export CRD_DIR=config/crd/bases
-export KUBEBUILDER_ASSETS=bin
-make test-integration
+# E2E tests (requires Kind cluster)
+./test/e2e/kind/run-e2e-test.sh all
+
+# Test specific modes
+./test/e2e/kind/run-e2e-test.sh test
 ```
 
 ## Deployment to Kind
 
 ```bash
-./scripts/kind-deploy.sh full  # Build and deploy everything
+./test/e2e/kind/run-e2e-test.sh all  # Build and deploy everything
 ```
 
 ## Key Design Principles
@@ -326,4 +397,5 @@ make test-integration
 3. **Harness Externalization**: Platform capabilities (Model, MCP, Sandbox) referenced by name
 4. **Dynamic Scheduling**: AIAgent can migrate between AgentRuntimes
 5. **Process Isolation**: `ShareProcessNamespace: true` for Handler to manage Framework processes
-6. **ImageVolume Pattern**: Framework image mounted to Handler for process execution
+6. **ImageVolume Pattern**: Framework image mounted to Handler for process execution (K8s 1.35+)
+7. **Config Daemon**: Solution M for agent config distribution without Pod K8s API access

@@ -1,38 +1,49 @@
 # Handler Information Flow Analysis
 
-## 问题概述
+## 实现状态 (2026-05-12)
 
-Handler 是否有足够的信息启动 ADK/OpenClaw Framework？
+**已实现方案: Config Daemon (Solution M)**
 
-## 当前信息来源
+通过Config Daemon + hostPath方式解决了信息流问题，Handler无需K8s API访问权限即可获取Agent配置。所有E2E测试已通过验证。
 
-### 1. Harness ConfigMap (正常)
+---
+
+## 已验证的信息来源
+
+### 1. Harness ConfigMap (已验证 ✓)
 - **创建**: AgentRuntime Controller 在 `resolveHarnessReferences()` 中创建
 - **命名**: `<harness-name>-harness-config`
 - **挂载路径**: `/etc/harness/<harness-name>/`
 - **内容**: `model.yaml`, `mcp.yaml`, `memory.yaml`, `sandbox.yaml`, `skills.yaml`
-- **状态**: ✅ Handler 可以正确读取
+- **状态**: ✅ Handler 可以正确读取，E2E测试验证
 
-### 2. AgentIndex ConfigMap (正常)
-- **创建**: AIAgent Controller 在 `updateAgentIndex()` 中创建
-- **命名**: `agent-index-<runtime-name>`
-- **挂载路径**: `/etc/agent-config/index/agent-index.yaml`
-- **内容**: 
-```yaml
-agents:
-  - name: <agent-name>
-    namespace: <namespace>
-    configMap: agent-config-<agent-name>
-    phase: Running
-    uid: <uid>
+### 2. Agent Config via hostPath (已实现 ✓)
+
+采用Config Daemon方案，Agent配置通过hostPath传递：
+
 ```
-- **状态**: ✅ Handler 可以正确读取
+Config Daemon (DaemonSet)
+├── Watches AIAgent CRDs via Informer
+├── Writes to hostPath: /var/lib/aiagent/configs/<namespace>/<agent-name>/
+│   ├── agent-config.json
+│   └── agent-meta.yaml
+│
+Pod (AgentRuntime)
+├── Mounts hostPath: /var/lib/aiagent/configs -> /etc/agent-config
+└── Handler reads /etc/agent-config/<namespace>/agent-index.yaml
+```
 
-### 3. Agent ConfigMap (❌ 问题所在)
+**优势**:
+- Handler不需要K8s API权限
+- 无RBAC配置需求
+- 与ShareProcessNamespace和ImageVolume模式兼容
+- 支持动态Agent添加
 
-## 时序问题分析
+---
 
-### 循环依赖
+## 原问题分析 (已解决)
+
+### 原循环依赖问题
 ```
 AgentRuntime Pod 创建 → 需要知道绑定的 agent 列表
                       → 需要挂载 agent ConfigMap
@@ -236,13 +247,17 @@ roleRef:
 
 ## 结论
 
-**推荐方案: Handler 通过 K8s API 读取 Agent ConfigMap**
+**已采用方案: Config Daemon (Solution M)**
 
-优点：
-1. 避免 Pod 重启
-2. 支持动态添加 agents
-3. 更灵活的配置管理
+通过Config Daemon将Agent配置写入hostPath，Handler通过hostPath挂载获取配置。此方案:
+- ✓ 完全解决时序问题
+- ✓ Handler无需K8s API权限
+- ✓ 支持动态添加Agent
+- ✓ 与ImageVolume和ShareProcessNamespace模式兼容
 
-缺点：
-1. 需要额外 RBAC 配置
-2. 有 API 调用开销（可以缓存）
+**E2E测试验证**:
+- ✓ ADK Shared: 2 AIAgents → 1 Framework进程
+- ✓ ADK Isolated: 3 AIAgents → 3 Framework进程
+- ✓ OpenClaw Gateway: 2 AIAgents → 2 Gateway进程
+
+**实现文件**: `cmd/config-daemon/main.go`, `Dockerfile.config-daemon`
