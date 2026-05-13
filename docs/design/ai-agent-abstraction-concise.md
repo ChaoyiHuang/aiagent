@@ -108,7 +108,7 @@ Platform defines delivery mechanism; AgentHandler determines content format.
 
 | Dimension | Design |
 |-----------|--------|
-| File Source | hostPath via Config Daemon (Solution M) |
+| File Source | hostPath via Config Daemon |
 | Declaration | AgentRuntime declares public config; AIAgent appends specific config |
 | Mount Path | `/etc/agent-config/runtime/` (public), `/etc/agent-config/agent/<name>/` (specific) |
 | Update | Config Daemon watches CRDs, Handler monitors file changes |
@@ -168,28 +168,6 @@ harnessOverride:
 ```
 
 **Security Constraint**: AIAgent can only override/deny capabilities provided by Runtime—cannot add new ones.
-
----
-
-## 6. ADK-Go Integration (Verified)
-
-The adk-framework now integrates with adk-go library for real agent execution:
-
-```
-adk-framework
-├── Imports google.golang.org/adk (local replace)
-├── Uses llmagent.New() for agent creation
-├── Uses runner.Runner for agent execution
-├── Uses session.InMemoryService() for session management
-│
-└── JSON-RPC Methods:
-    ├── agent.run - Execute agent with user message
-    ├── agent.status - Query agent status
-    ├── agent.list - List all agents
-    ├── framework.status - Framework health
-```
-
-**Custom Model Support**: Handler can use OpenAI-compatible APIs (DeepSeek) via custom model implementation.
 
 ---
 

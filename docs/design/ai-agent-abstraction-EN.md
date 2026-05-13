@@ -300,7 +300,36 @@ AgentRuntime improves resource efficiency through the following design points:
 - Lightweight container isolation, reduce overhead
 - Requirement for independent image release and upgrade
 - Shared PID namespace supports Agent Handler starting and managing multiple Agent Framework processes
-- **TBD**: need to design a mechanism for Agent Handler to manage Agent Framework and AI Agents
+
+**Mechanism for Agent Handler to manage Agent Framework and AI Agents (Implemented - ImageVolume Pattern)**:
+
+The mechanism uses Kubernetes 1.35+ ImageVolume feature combined with ShareProcessNamespace:
+
+```
+Pod (AgentRuntime)
+├── Handler Container (process manager)
+│   ├── Starts Framework processes via exec.Command
+│   ├── Uses /framework-rootfs/<binary-path> for Framework executable
+│   ├── Controls process lifecycle (start/stop/monitor)
+│   └── VolumeMounts:
+│       ├── /framework-rootfs -> ImageVolume (Framework image)
+│       ├── /etc/harness/<name> -> Harness ConfigMaps
+│       ├── /shared/workdir -> EmptyDir (agent workspace)
+│       └── /etc/agent-config -> hostPath (Config Daemon)
+│
+└── Framework Container (DUMMY - provides image content only)
+│   └── ENTRYPOINT: sleep infinity
+│   └── Provides image content for ImageVolume
+│   └── Does NOT run Framework processes - Handler manages them
+│
+└── ShareProcessNamespace: true (Handler can see/control Framework processes)
+```
+
+**ImageVolume Benefits** (K8s 1.35+):
+- Handler accesses Framework's complete filesystem via `/framework-rootfs`
+- Independent image releases (Handler/Framework decoupled)
+- No binary copying or init containers needed
+- Handler is the sole process manager for Framework instances
 
 ### 3.6 Sandbox Integration Design
 
@@ -482,138 +511,41 @@ During migration, PVC follows AIAgent, unbinds from old Pod and mounts to new Po
 
 ### 4.6 agentConfig Design
 
-agentConfig is the business configuration delivery mechanism needed by Agent/Handler/Framework startup and runtime, separate from Harness (platform engineering capabilities).
+agentConfig is the business configuration delivery mechanism needed by Agent/Handler/Framework startup and runtime. Platform defines delivery mechanism; AgentHandler determines content format.
 
-#### 4.6.1 Design Philosophy
+| Dimension | Design |
+|-----------|--------|
+| **File Source** | hostPath via Config Daemon |
+| **Declaration** | AgentRuntime declares public config; AIAgent appends specific config |
+| **Mount Path** | `/etc/agent-config/runtime/` (public), `/etc/agent-config/agent/<name>/` (specific) |
+| **Update** | Config Daemon watches CRDs, Handler monitors file changes |
+| **Scope** | Same Namespace only |
 
-**Core Principle**: Platform layer only defines file delivery mechanism, Handler determines specific file content format.
-
+**Config Daemon Architecture**:
 ```
-Platform Layer Responsibilities:
-├── Define file delivery mechanism (how to deliver)
-└── Don't care about file content format
-
-Handler Responsibilities:
-├── Define configuration file format needed by its framework
-├── Parse configuration file content
-└── Use these configurations when starting Agent
-
-User Responsibilities:
-├── Prepare correctly formatted configuration files per Handler documentation
-└── Submit to platform for delivery to Handler
-```
-
-#### 4.6.2 Configuration Declaration Method
-
-**Decision**: AgentRuntime declares public configuration (for all Agents of same type), AIAgent appends Agent-specific configuration.
-
-**Considerations**:
-- Some configurations are same for all Agents of same type (e.g., protocol config)
-- Some configurations are Agent-specific (e.g., Prompt content, controlled skill set)
-- Public configuration managed at Runtime level reduces duplicate configuration
-
-#### 4.6.3 File Source
-
-**Decision**: Reference external ConfigMap/Secret.
-
-**TBD**:
-- Whether AI Agent configuration needs multiple different configuration files
-- How Agent Handler standardizes AI Agent configuration delivery
-
-**Considerations**:
-- Users pre-create ConfigMap/Secret to store configuration files
-- AIAgent and AgentRuntime reference these external resources
-- Configuration content separated from CRD, facilitates independent management and updates
-- Follows K8s conventions (ConfigMap/Secret are standard carriers for configuration)
-
-#### 4.6.4 Mount Path Specification
-
-**Decision**: Unified mount path, sub-directories by source.
-
-```
-Pod Mount Structure:
-/etc/agent-config/
-├── runtime/                        # Runtime public configuration
-│   ├── protocol/
-│   │   └── protocol.yaml
-└── agent/                          # Agent-specific configuration
-    ├── prompt/
-    │   └── prompt.yaml
-    └── skills/
-    │   └── skills.yaml
+Config Daemon (DaemonSet)
+├── Watches AIAgent CRDs via Informer
+├── Writes to hostPath: /var/lib/aiagent/configs/<namespace>/<agent-name>/
+├── Creates agent-index.yaml in namespace directory
+│
+Pod (AgentRuntime)
+├── Mounts hostPath as /etc/agent-config
+└── Handler reads agent-index.yaml to discover agents
 ```
 
-**Considerations**:
-- Handler knows to read all configuration files from `/etc/agent-config/`
-- `runtime/` and `agent/` sub-directories distinguish public and specific configuration
-- Handler decides merge logic itself, has maximum flexibility
-- Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
+**Key Distinction from Harness**:
 
-#### 4.6.5 Update Mechanism
-
-**Decision**: Handler actively monitors file changes.
-
-**Considerations**:
-- Handler uses fsnotify or polling to monitor `/etc/agent-config/` directory
-- When files change, Handler reloads configuration and updates Agent
-- Handler decides update strategy itself (immediate effect, waiting window, etc.)
-- Platform layer doesn't intervene in update logic, reduces complexity
-
-#### 4.6.6 File Naming
-
-**Decision**: Handler defines configuration file naming specification, avoids name conflicts.
-
-**Considerations**:
-- Handler documents what configuration files are needed and their naming
-- Users prepare differently named files per Handler requirements
-- Platform layer doesn't handle file conflicts, only responsible for mounting
-
-#### 4.6.7 Override Behavior
-
-**Decision**: Merge mount, Handler decides merge logic.
-
-**Considerations**:
-- Runtime public configuration and AIAgent configuration both mounted to Pod
-- Handler knows which is public (`runtime/` directory) and which is specific (`agent/` directory)
-- Handler decides how to merge or override, has maximum flexibility
-
-#### 4.6.8 Runtime Dynamic Update
-
-**Decision**: Support dynamic update, Handler decides update method.
-
-**Considerations**:
-- After AgentRuntime's agentConfig is modified, all related Agents' Pods receive updates
-- Handler monitors changes and decides how to update all Agents
-- Platform layer responsible for ConfigMap sync, Handler responsible for business logic update
-
-#### 4.6.9 Reference Scope
-
-**Decision**: Only reference ConfigMap/Secret in same Namespace.
-
-**Considerations**:
-- Aligns with multi-tenant isolation principle
-- Cross-Namespace reference requires extra RBAC permissions, increases security risk
-- Consider extension when actual use case needs arise
-
-#### 4.6.10 agentConfig Design Summary
-
-| Dimension | Decision |
-|-----------|----------|
-| Design Philosophy | Platform only defines delivery mechanism, Handler determines content format |
-| Naming | agentConfig |
-| File Source | Reference external ConfigMap/Secret |
-| Declaration Method | Runtime declares public config, AIAgent appends specific config |
-| Mount Path | `/etc/agent-config/runtime/` and `/etc/agent-config/agent/` |
-| Update Mechanism | Handler actively monitors file changes |
-| File Naming | Handler defines specification, avoid same names |
-| Override Behavior | Merge mount, Handler decides merge logic |
-| Runtime Dynamic Update | Supported, Handler decides update method |
-| Reference Scope | Same Namespace, no cross-Namespace |
+| Dimension | Harness | agentConfig |
+|-----------|---------|-------------|
+| **Positioning** | Platform engineering capabilities | Agent/Handler/Framework configuration |
+| **Examples** | Model, MCP, Sandbox, Skills | Prompt, protocol config |
+| **Processing** | Platform-level by Agent ID | Handler determines format |
+| **Responsibility** | Platform manages | Handler processes |
 
 ### 4.7 CRD Structure Example
 
 ```yaml
-apiVersion: ai.k8s.io/v1
+apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
   name: agent-001
@@ -624,6 +556,12 @@ spec:
     # or name: runtime-001  # Specify instance, fixed binding
 
   harnessOverride:
+    model:
+      - name: model-deepseek
+        allowedModels:
+          - deepseek-chat
+        deniedModels:
+          - deepseek-reasoner
     mcp:
       - name: mcp-registry-default
         allowedServers:         # Override allowed MCP Servers
@@ -631,18 +569,25 @@ spec:
           - browser
         deniedServers:          # Add denied MCP Servers
           - filesystem
-    memory:
-      - name: redis-memory
-        config:
-          ttl: 3600
+    sandbox:
+      - name: gvisor-sandbox
+        deny: false             # Allow sandbox access
+    skills:
+      - name: skills-default
+        allowedSkills:
+          - search
+          - calculator
+        deniedSkills:
+          - filesystem
 
-  agentConfig:                      # Agent-specific configuration (append)
-    - name: prompt                 # Not all Agents have prompt configuration, e.g. OpenClaw doesn't need prompt config
-      configMapRef:
-        name: agent-prompt
-    - name: skills
-      configMapRef:
-        name: agent-skill-set
+  agentConfig:                      # Framework-specific JSON configuration
+    model: "deepseek-chat"
+    # OpenClaw example:
+    # gateway:
+    #   port: 18789
+    # agents:
+    #   - name: weather
+    #     model: "gpt-4o"
 
   volumePolicy: retain     # PVC lifecycle policy: retain | delete
 
@@ -652,6 +597,8 @@ status:
   phase: Running
   runtimeRef:
     name: runtime-001      # Currently bound Runtime
+    uid: "abc123"          # Runtime UID for verification
+  agentID: "framework-internal-id-001"  # Framework-generated ID
   conditions:
     - type: Ready
       status: "True"
