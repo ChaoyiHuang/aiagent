@@ -12,7 +12,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -586,7 +585,7 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 
 // buildContainerFromHandlerSpec builds a container from HandlerSpec.
 func (r *AgentRuntimeReconciler) buildContainerFromHandlerSpec(name string, spec v1.AgentHandlerSpec, volumeMounts []corev1.VolumeMount) corev1.Container {
-	return r.buildContainerCommon(name, spec.Image, spec.Command, spec.Args, spec.Env, spec.Resources, volumeMounts)
+	return r.buildContainerCommon(name, spec.Image, spec.Command, spec.Args, spec.Env, volumeMounts)
 }
 
 // buildFrameworkDummyContainer builds a DUMMY framework container.
@@ -611,7 +610,7 @@ func (r *AgentRuntimeReconciler) buildFrameworkDummyContainer(name string, spec 
 }
 
 // buildContainerCommon builds a container from common parameters.
-func (r *AgentRuntimeReconciler) buildContainerCommon(name string, image string, command []string, args []string, env []v1.EnvVar, resources *v1.ContainerResources, volumeMounts []corev1.VolumeMount) corev1.Container {
+func (r *AgentRuntimeReconciler) buildContainerCommon(name string, image string, command []string, args []string, env []v1.EnvVar, volumeMounts []corev1.VolumeMount) corev1.Container {
 	container := corev1.Container{
 		Name:         name,
 		Image:        image,
@@ -627,10 +626,6 @@ func (r *AgentRuntimeReconciler) buildContainerCommon(name string, image string,
 	}
 
 	container.Env = r.buildEnvVars(env)
-
-	if resources != nil {
-		container.Resources = r.buildResourceRequirements(resources)
-	}
 
 	container.SecurityContext = &corev1.SecurityContext{
 		Privileged:             boolPtr(false),
@@ -674,24 +669,6 @@ func (r *AgentRuntimeReconciler) buildEnvVars(envVars []v1.EnvVar) []corev1.EnvV
 		env = append(env, envVar)
 	}
 	return env
-}
-
-// buildResourceRequirements builds Kubernetes resource requirements.
-func (r *AgentRuntimeReconciler) buildResourceRequirements(resources *v1.ContainerResources) corev1.ResourceRequirements {
-	req := corev1.ResourceRequirements{}
-	if resources.Limits != nil {
-		req.Limits = corev1.ResourceList{}
-		for k, v := range resources.Limits {
-			req.Limits[corev1.ResourceName(k)] = resource.MustParse(string(v))
-		}
-	}
-	if resources.Requests != nil {
-		req.Requests = corev1.ResourceList{}
-		for k, v := range resources.Requests {
-			req.Requests[corev1.ResourceName(k)] = resource.MustParse(string(v))
-		}
-	}
-	return req
 }
 
 // updateStatusFromPod updates AgentRuntime status from Pod state.

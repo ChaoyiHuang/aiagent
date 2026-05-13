@@ -179,7 +179,7 @@ func waitForCRDs(ctx context.Context, config *rest.Config) error {
 	}{
 		{"agent.ai", "v1", "harnesses", "HarnessList"},
 		{"agent.ai", "v1", "agentruntimes", "AgentRuntimeList"},
-		{"agent.ai", "v1", "aigents", "AIAgentList"},
+		{"agent.ai", "v1", "aiagents", "AIAgentList"},
 	}
 
 	for i := 0; i < 30; i++ {

@@ -1,31 +1,14 @@
 // Package openclaw provides configuration conversion for OpenClaw framework.
 // This converter transforms AIAgentSpec + HarnessConfig into OpenClaw JSON config.
 //
-// OpenClaw Config Structure (from src/config/types.openclaw.ts):
-// ┌─────────────────────────────────────────────────────────────────┐
-// │ openclaw.json                                                    │
-// ├─────────────────────────────────────────────────────────────────┤
-// │ {                                                                │
-// │   "agents": {                                                    │
-// │     "defaults": { ... },  // Default agent configuration         │
-// │     "list": [ ... ]       // Agent instances                     │
-// │   },                                                             │
-// │   "models": {                    // Model providers              │
-// │     "providers": {                                               │
-// │       "deepseek": { "baseUrl": "...", "apiKey": "..." }          │
-// │     }                                                            │
-// │   },                                                             │
-// │   "skills": { ... },             // Skills configuration         │
-// │   "tools": { ... },              // Tools configuration          │
-// │   "memory": { ... },             // Memory configuration         │
-// │   "gateway": { ... },            // Gateway configuration        │
-// │   "channels": { ... }            // Channel configuration        │
-// │ }                                                                │
-// └─────────────────────────────────────────────────────────────────┘
+// Configuration Sources:
+// - agentConfig (from AIAgentSpec): Gateway port, internal agents, overrides
+// - HarnessConfig (from AgentRuntime): Models, Skills, Memory (shared)
 package openclaw
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"aiagent/api/v1"
 	"aiagent/pkg/handler"
@@ -53,26 +36,71 @@ func (c *ConfigConverter) ConvertToOpenClawConfig(spec *v1.AIAgentSpec, harnessC
 		},
 	}
 
-	// Convert agent defaults from harness
+	// 1. Parse agentConfig JSON (agent-specific configuration)
+	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {
+		agentConfig, err := c.parseAgentConfigJSON(spec.AgentConfig.Raw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse agentConfig: %w", err)
+		}
+
+		// Apply agentConfig to OpenClaw config
+		if agentConfig.Gateway != nil {
+			config.Gateway = c.convertGatewayInstanceConfig(agentConfig.Gateway)
+		}
+		if agentConfig.InternalAgents != nil {
+			config.Agents = c.convertInternalAgentsConfig(agentConfig.InternalAgents)
+		}
+		// Apply overrides after agents are set
+		if agentConfig.Overrides != nil {
+			c.applyAgentOverrides(config, agentConfig.Overrides)
+		}
+	}
+
+	// 2. Apply Harness configuration (shared platform capabilities)
 	if harnessCfg != nil {
-		config.Agents.Defaults = c.convertAgentDefaults(harnessCfg)
+		config.Agents.Defaults = c.convertAgentDefaultsFromHarness(harnessCfg)
 		config.Models = c.convertModelsConfig(harnessCfg)
 		config.Skills = c.convertSkillsConfig(harnessCfg)
 		config.Memory = c.convertMemoryConfig(harnessCfg)
+		config.Sandbox = c.convertSandboxConfig(harnessCfg)
+		// If external sandbox, set plugins path
+		if config.Sandbox != nil && config.Sandbox.Mode == "external" && config.Sandbox.Plugins != nil {
+			config.Plugins = config.Sandbox.Plugins
+		}
 	}
 
-	// Convert agent from spec
-	agentCfg, err := c.ConvertAgentSpec(spec, harnessCfg)
-	if err != nil {
-		return nil, err
+	// 3. Create main agent entry from AIAgentSpec metadata
+	mainAgent := &AgentConfig{
+		ID:          spec.Description,
+		Name:        spec.Description,
+		Description: spec.Description,
 	}
-	config.Agents.List = []*AgentConfig{agentCfg}
+
+	// Apply model from harness
+	if harnessCfg != nil && harnessCfg.Model != nil {
+		mainAgent.Model = &AgentModelConfig{
+			Primary: harnessCfg.Model.DefaultModel,
+		}
+	}
+
+	// Apply skills from harness
+	if harnessCfg != nil && harnessCfg.Skills != nil {
+		for _, skill := range harnessCfg.Skills.Skills {
+			if skill.Allowed {
+				mainAgent.Skills = append(mainAgent.Skills, skill.Name)
+			}
+		}
+	}
+
+	// Add main agent to list if no internal agents defined
+	if len(config.Agents.List) == 0 {
+		config.Agents.List = []*AgentConfig{mainAgent}
+	}
 
 	return json.MarshalIndent(config, "", "  ")
 }
 
 // ConvertAgentSpec generates AgentConfig section for a single agent.
-// This is called by GenerateAgentConfig.
 func (c *ConfigConverter) ConvertAgentSpec(spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig) (*AgentConfig, error) {
 	agentCfg := &AgentConfig{
 		ID:          spec.Description,
@@ -103,17 +131,322 @@ func (c *ConfigConverter) ConvertAgentSpec(spec *v1.AIAgentSpec, harnessCfg *han
 }
 
 // ConvertHarnessConfig generates harness-specific config sections.
-// This is called by GenerateHarnessConfig.
 func (c *ConfigConverter) ConvertHarnessConfig(harnessCfg *handler.HarnessConfig) ([]byte, error) {
 	harnessSection := &HarnessSection{
 		Model:   c.convertModelsConfig(harnessCfg),
 		Skills:  c.convertSkillsConfig(harnessCfg),
 		Memory:  c.convertMemoryConfig(harnessCfg),
-		MCP:     c.convertMCPConfig(harnessCfg),
-		Sandbox: c.convertSandboxConfig(harnessCfg),
 	}
 
 	return json.MarshalIndent(harnessSection, "", "  ")
+}
+
+// ============================================================
+// agentConfig Parsing (AIAgentSpec.agentConfig.Raw)
+// ============================================================
+
+// AgentConfigJSON represents the agentConfig JSON structure from AIAgentSpec.
+// ONLY contains agent-specific configuration (not shared Harness capabilities).
+// Fields use JSON names matching the schema defined earlier.
+type AgentConfigJSON struct {
+	// Gateway process configuration for this agent instance
+	Gateway *GatewayInstanceConfigJSON `json:"gateway"`
+
+	// Internal sub-agents managed by this Gateway (keyed as "agents" in JSON)
+	InternalAgents *InternalAgentsConfigJSON `json:"agents,omitempty"`
+
+	// Per-agent overrides of inherited Harness defaults
+	Overrides *AgentOverridesConfigJSON `json:"overrides,omitempty"`
+}
+
+// GatewayInstanceConfigJSON - Gateway process specific config
+type GatewayInstanceConfigJSON struct {
+	// Port for this Gateway instance
+	Port int `json:"port,omitempty"`
+
+	// Bind address: loopback, lan, auto
+	Bind string `json:"bind,omitempty"`
+
+	// Authentication for this Gateway instance
+	Auth *GatewayAuthConfigJSON `json:"auth,omitempty"`
+
+	// Control UI settings
+	ControlUI *GatewayControlUIConfigJSON `json:"controlUi,omitempty"`
+
+	// Trusted proxy IPs for X-Forwarded-For
+	TrustedProxies []string `json:"trustedProxies,omitempty"`
+}
+
+// GatewayAuthConfigJSON - Gateway authentication
+type GatewayAuthConfigJSON struct {
+	// Auth mode: none, token, password
+	Mode string `json:"mode,omitempty"`
+
+	// Token for token mode
+	Token string `json:"token,omitempty"`
+}
+
+// GatewayControlUIConfigJSON - Control UI for this instance
+type GatewayControlUIConfigJSON struct {
+	Enabled        bool     `json:"enabled,omitempty"`
+	BasePath       string   `json:"basePath,omitempty"`
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
+}
+
+// InternalAgentsConfigJSON - Sub-agents inside Gateway
+type InternalAgentsConfigJSON struct {
+	// Default settings for internal agents
+	Defaults *InternalAgentDefaultsJSON `json:"defaults,omitempty"`
+
+	// List of internal sub-agents
+	List []*InternalAgentDefinitionJSON `json:"list,omitempty"`
+}
+
+// InternalAgentDefaultsJSON - Default settings for sub-agents
+type InternalAgentDefaultsJSON struct {
+	// Override inherited model
+	Model string `json:"model,omitempty"`
+
+	// Thinking level: off, minimal, low, medium, high, xhigh, adaptive
+	ThinkingDefault string `json:"thinkingDefault,omitempty"`
+
+	// Reasoning visibility: on, off, stream
+	ReasoningDefault string `json:"reasoningDefault,omitempty"`
+
+	// Fast mode default
+	FastModeDefault bool `json:"fastModeDefault,omitempty"`
+
+	// Identity for all sub-agents
+	Identity *AgentIdentityJSON `json:"identity,omitempty"`
+}
+
+// InternalAgentDefinitionJSON - Single internal sub-agent
+type InternalAgentDefinitionJSON struct {
+	// Agent identifier
+	ID string `json:"id"`
+
+	// Display name
+	Name string `json:"name,omitempty"`
+
+	// Override model for this sub-agent
+	Model string `json:"model,omitempty"`
+
+	// Allowed skills (subset of Harness.Skills)
+	Skills []string `json:"skills,omitempty"`
+
+	// Identity for this sub-agent
+	Identity *AgentIdentityJSON `json:"identity,omitempty"`
+
+	// Tool restrictions (subset)
+	Tools *ToolsOverrideJSON `json:"tools,omitempty"`
+
+	// Subagent spawning config
+	Subagents *SubagentsConfigJSON `json:"subagents,omitempty"`
+}
+
+// AgentIdentityJSON - Agent name and avatar
+type AgentIdentityJSON struct {
+	Name   string `json:"name,omitempty"`
+	Avatar string `json:"avatar,omitempty"`
+}
+
+// ToolsOverrideJSON - Per-agent tool restrictions
+type ToolsOverrideJSON struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+// SubagentsConfigJSON - Sub-agent spawning rules
+type SubagentsConfigJSON struct {
+	// Allowed sub-agent IDs ("*" = any)
+	AllowAgents []string `json:"allowAgents,omitempty"`
+
+	// Default model for spawned sub-agents
+	Model string `json:"model,omitempty"`
+
+	// Require explicit agentId in spawn calls
+	RequireAgentID bool `json:"requireAgentId,omitempty"`
+}
+
+// AgentOverridesConfigJSON - Override inherited Harness defaults
+type AgentOverridesConfigJSON struct {
+	// Override model selection
+	Model string `json:"model,omitempty"`
+
+	// Skills subset (cannot add new, only restrict)
+	AllowedSkills []string `json:"allowedSkills,omitempty"`
+	DeniedSkills  []string `json:"deniedSkills,omitempty"`
+
+	// Model fallback chain override
+	ModelFallbacks []string `json:"modelFallbacks,omitempty"`
+}
+
+// parseAgentConfigJSON parses raw agentConfig JSON
+func (c *ConfigConverter) parseAgentConfigJSON(raw []byte) (*AgentConfigJSON, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	agentConfig := &AgentConfigJSON{}
+	if err := json.Unmarshal(raw, agentConfig); err != nil {
+		return nil, fmt.Errorf("invalid agentConfig JSON: %w", err)
+	}
+
+	return agentConfig, nil
+}
+
+// ParseAgentConfig is the public method for Handler to call
+func (c *ConfigConverter) ParseAgentConfig(raw []byte) (*AgentConfigJSON, error) {
+	return c.parseAgentConfigJSON(raw)
+}
+
+// convertGatewayInstanceConfig converts agentConfig.Gateway to OpenClaw GatewayConfig
+func (c *ConfigConverter) convertGatewayInstanceConfig(gateway *GatewayInstanceConfigJSON) *GatewayConfig {
+	cfg := &GatewayConfig{
+		Mode: "local",
+	}
+
+	if gateway.Port > 0 {
+		cfg.Port = gateway.Port
+	}
+	if gateway.Bind != "" {
+		cfg.Host = gateway.Bind
+	}
+	if gateway.Auth != nil {
+		cfg.AuthMode = gateway.Auth.Mode
+	}
+	if gateway.ControlUI != nil {
+		cfg.ControlUI = &ControlUIConfig{
+			Enabled:        gateway.ControlUI.Enabled,
+			BasePath:       gateway.ControlUI.BasePath,
+			AllowedOrigins: gateway.ControlUI.AllowedOrigins,
+		}
+	}
+	cfg.TrustedProxies = gateway.TrustedProxies
+
+	return cfg
+}
+
+// convertInternalAgentsConfig converts agentConfig.InternalAgents to OpenClaw AgentsConfig
+func (c *ConfigConverter) convertInternalAgentsConfig(internal *InternalAgentsConfigJSON) *AgentsConfig {
+	agents := &AgentsConfig{}
+
+	// Convert defaults
+	if internal.Defaults != nil {
+		agents.Defaults = &AgentDefaultsConfig{
+			ThinkingDefault:  internal.Defaults.ThinkingDefault,
+			ReasoningDefault: internal.Defaults.ReasoningDefault,
+			FastModeDefault:  internal.Defaults.FastModeDefault,
+		}
+		if internal.Defaults.Model != "" {
+			agents.Defaults.Model = &AgentModelConfig{
+				Primary: internal.Defaults.Model,
+			}
+		}
+		if internal.Defaults.Identity != nil {
+			agents.Defaults.Identity = &IdentityConfig{
+				Name:   internal.Defaults.Identity.Name,
+				Avatar: internal.Defaults.Identity.Avatar,
+			}
+		}
+	}
+
+	// Convert internal agent list
+	for _, def := range internal.List {
+		agent := &AgentConfig{
+			ID:   def.ID,
+			Name: def.Name,
+		}
+		if def.Model != "" {
+			agent.Model = &AgentModelConfig{
+				Primary: def.Model,
+			}
+		}
+		agent.Skills = def.Skills
+		if def.Identity != nil {
+			agent.Identity = &IdentityConfig{
+				Name:   def.Identity.Name,
+				Avatar: def.Identity.Avatar,
+			}
+		}
+		if def.Tools != nil {
+			agent.Tools = &AgentToolsConfig{
+				Allow: def.Tools.Allow,
+				Deny:  def.Tools.Deny,
+			}
+		}
+		if def.Subagents != nil {
+			agent.Subagents = &SubagentsConfigOpenClaw{
+				AllowAgents:    def.Subagents.AllowAgents,
+				RequireAgentID: def.Subagents.RequireAgentID,
+			}
+			if def.Subagents.Model != "" {
+				agent.Subagents.Model = &AgentModelConfig{
+					Primary: def.Subagents.Model,
+				}
+			}
+		}
+		agents.List = append(agents.List, agent)
+	}
+
+	return agents
+}
+
+// applyAgentOverrides applies agentConfig.Overrides to OpenClaw config
+func (c *ConfigConverter) applyAgentOverrides(config *OpenClawConfig, overrides *AgentOverridesConfigJSON) {
+	// Override default model
+	if overrides.Model != "" && config.Agents.Defaults != nil {
+		config.Agents.Defaults.Model = &AgentModelConfig{
+			Primary: overrides.Model,
+		}
+	}
+
+	// Filter skills for all agents
+	if len(overrides.AllowedSkills) > 0 || len(overrides.DeniedSkills) > 0 {
+		for _, agent := range config.Agents.List {
+			agent.Skills = c.filterSkills(agent.Skills, overrides.AllowedSkills, overrides.DeniedSkills)
+		}
+	}
+
+	// Set model fallbacks
+	if len(overrides.ModelFallbacks) > 0 && config.Agents.Defaults != nil && config.Agents.Defaults.Model != nil {
+		config.Agents.Defaults.Model.Fallbacks = overrides.ModelFallbacks
+	}
+}
+
+// filterSkills filters skills based on allow/deny lists
+func (c *ConfigConverter) filterSkills(skills []string, allowed []string, denied []string) []string {
+	if len(skills) == 0 {
+		return skills
+	}
+
+	// Build allowed set
+	allowedSet := make(map[string]bool)
+	for _, s := range allowed {
+		allowedSet[s] = true
+	}
+
+	// Build denied set
+	deniedSet := make(map[string]bool)
+	for _, s := range denied {
+		deniedSet[s] = true
+	}
+
+	// Filter skills
+	result := []string{}
+	for _, s := range skills {
+		// Skip if denied
+		if deniedSet[s] {
+			continue
+		}
+		// If allowed list exists, only keep allowed skills
+		if len(allowedSet) > 0 && !allowedSet[s] {
+			continue
+		}
+		result = append(result, s)
+	}
+
+	return result
 }
 
 // ============================================================
@@ -140,59 +473,6 @@ func (c *ConfigConverter) ConvertModelHarness(harness handler.ModelHarnessInterf
 	return json.MarshalIndent(modelConfig, "", "  ")
 }
 
-// ConvertMCPHarness converts MCPHarnessInterface to OpenClaw MCP config.
-func (c *ConfigConverter) ConvertMCPHarness(harness handler.MCPHarnessInterface) ([]byte, error) {
-	if harness == nil {
-		return nil, nil
-	}
-
-	mcpConfig := &MCPConfig{
-		RegistryType: harness.GetRegistryType(),
-		Endpoint:     harness.GetEndpoint(),
-		Servers:      c.convertMCPServers(harness.GetServers()),
-	}
-
-	return json.MarshalIndent(mcpConfig, "", "  ")
-}
-
-// ConvertMemoryHarness converts MemoryHarnessInterface to OpenClaw memory config.
-func (c *ConfigConverter) ConvertMemoryHarness(harness handler.MemoryHarnessInterface) ([]byte, error) {
-	if harness == nil {
-		return nil, nil
-	}
-
-	memoryConfig := &MemoryConfig{
-		Type:         harness.GetType(),
-		Endpoint:     harness.GetEndpoint(),
-		TTL:          harness.GetTTL(),
-		Persistence:  harness.IsPersistenceEnabled(),
-	}
-
-	return json.MarshalIndent(memoryConfig, "", "  ")
-}
-
-// ConvertSandboxHarness converts SandboxHarnessInterface to OpenClaw sandbox config.
-func (c *ConfigConverter) ConvertSandboxHarness(harness handler.SandboxHarnessInterface) ([]byte, error) {
-	if harness == nil {
-		return nil, nil
-	}
-
-	sandboxConfig := &SandboxConfig{
-		Mode:     string(harness.GetMode()),
-		Endpoint: harness.GetEndpoint(),
-		Timeout:  harness.GetTimeout(),
-	}
-
-	if limits := harness.GetResourceLimits(); limits != nil {
-		sandboxConfig.Resources = &ResourceConfig{
-			CPU:    limits.CPU,
-			Memory: limits.Memory,
-		}
-	}
-
-	return json.MarshalIndent(sandboxConfig, "", "  ")
-}
-
 // ConvertSkillsHarness converts SkillsHarnessInterface to OpenClaw skills config.
 func (c *ConfigConverter) ConvertSkillsHarness(harness handler.SkillsHarnessInterface) ([]byte, error) {
 	if harness == nil {
@@ -208,24 +488,62 @@ func (c *ConfigConverter) ConvertSkillsHarness(harness handler.SkillsHarnessInte
 	return json.MarshalIndent(skillsConfig, "", "  ")
 }
 
+// ConvertMemoryHarness converts MemoryHarnessInterface to OpenClaw memory config.
+func (c *ConfigConverter) ConvertMemoryHarness(harness handler.MemoryHarnessInterface) ([]byte, error) {
+	if harness == nil {
+		return nil, nil
+	}
+
+	memoryConfig := &MemoryConfig{
+		Type:        harness.GetType(),
+		Endpoint:    harness.GetEndpoint(),
+		TTL:         harness.GetTTL(),
+		Persistence: harness.IsPersistenceEnabled(),
+	}
+
+	return json.MarshalIndent(memoryConfig, "", "  ")
+}
+
+// ConvertSandboxHarness converts SandboxHarnessInterface to OpenClaw sandbox config.
+// For External Sandbox, generates plugins configuration for harness-bridge plugin.
+// For Embedded Sandbox, generates local sandbox configuration.
+func (c *ConfigConverter) ConvertSandboxHarness(harness handler.SandboxHarnessInterface, pluginDir string) ([]byte, error) {
+	if harness == nil {
+		return nil, nil
+	}
+
+	sandboxConfig := &SandboxConfig{
+		Mode: string(harness.GetMode()),
+	}
+
+	if harness.IsExternal() {
+		// External Sandbox: Configure harness-bridge plugin path
+		sandboxConfig.Plugins = &PluginsConfig{
+			Load: &PluginsLoadConfig{
+				Paths: []string{pluginDir},
+			},
+		}
+		sandboxConfig.Endpoint = harness.GetEndpoint()
+		sandboxConfig.Timeout = harness.GetTimeout()
+	} else {
+		// Embedded Sandbox: Local execution (no plugin needed)
+		sandboxConfig.Mode = "embedded"
+	}
+
+	return json.MarshalIndent(sandboxConfig, "", "  ")
+}
+
 // ============================================================
 // Helper Conversion Methods
 // ============================================================
 
-// convertAgentDefaults converts harness to agent defaults configuration.
-func (c *ConfigConverter) convertAgentDefaults(harnessCfg *handler.HarnessConfig) *AgentDefaultsConfig {
+// convertAgentDefaultsFromHarness converts harness to agent defaults configuration.
+func (c *ConfigConverter) convertAgentDefaultsFromHarness(harnessCfg *handler.HarnessConfig) *AgentDefaultsConfig {
 	defaults := &AgentDefaultsConfig{}
 
 	if harnessCfg.Model != nil {
 		defaults.Model = &AgentModelConfig{
 			Primary: harnessCfg.Model.DefaultModel,
-		}
-	}
-
-	if harnessCfg.Sandbox != nil {
-		defaults.Sandbox = &AgentSandboxConfig{
-			Enabled: harnessCfg.Sandbox.Mode != "",
-			Mode:    string(harnessCfg.Sandbox.Mode),
 		}
 	}
 
@@ -259,10 +577,10 @@ func (c *ConfigConverter) convertSkillsConfig(harnessCfg *handler.HarnessConfig)
 	}
 
 	return &SkillsConfig{
-		HubType:  harnessCfg.Skills.HubType,
-		Endpoint: harnessCfg.Skills.Endpoint,
+		HubType:   harnessCfg.Skills.HubType,
+		Endpoint:  harnessCfg.Skills.Endpoint,
 		LocalPath: harnessCfg.Skills.LocalPath,
-		Skills:   c.convertSkillItemsFromSpec(harnessCfg.Skills.Skills),
+		Skills:    c.convertSkillItemsFromSpec(harnessCfg.Skills.Skills),
 	}
 }
 
@@ -280,35 +598,26 @@ func (c *ConfigConverter) convertMemoryConfig(harnessCfg *handler.HarnessConfig)
 	}
 }
 
-// convertMCPConfig converts harness MCP config to OpenClaw MCP section.
-func (c *ConfigConverter) convertMCPConfig(harnessCfg *handler.HarnessConfig) *MCPConfig {
-	if harnessCfg == nil || harnessCfg.MCP == nil {
-		return nil
-	}
-
-	return &MCPConfig{
-		RegistryType: harnessCfg.MCP.RegistryType,
-		Endpoint:     harnessCfg.MCP.Endpoint,
-		Servers:      c.convertMCPServersFromSpec(harnessCfg.MCP.Servers),
-	}
-}
-
 // convertSandboxConfig converts harness sandbox config to OpenClaw sandbox section.
+// For External Sandbox, configures plugins path for harness-bridge plugin.
 func (c *ConfigConverter) convertSandboxConfig(harnessCfg *handler.HarnessConfig) *SandboxConfig {
 	if harnessCfg == nil || harnessCfg.Sandbox == nil {
 		return nil
 	}
 
 	sandboxConfig := &SandboxConfig{
-		Mode:     string(harnessCfg.Sandbox.Mode),
-		Endpoint: harnessCfg.Sandbox.Endpoint,
-		Timeout:  int64(harnessCfg.Sandbox.Timeout),
+		Mode: string(harnessCfg.Sandbox.Mode),
 	}
 
-	if harnessCfg.Sandbox.ResourceLimits != nil {
-		sandboxConfig.Resources = &ResourceConfig{
-			CPU:    harnessCfg.Sandbox.ResourceLimits.CPU,
-			Memory: harnessCfg.Sandbox.ResourceLimits.Memory,
+	if harnessCfg.Sandbox.Mode == v1.SandboxModeExternal {
+		// External Sandbox: Configure plugins path for harness-bridge plugin
+		pluginDir := "/etc/aiagent/plugins/harness-bridge"
+		sandboxConfig.Endpoint = harnessCfg.Sandbox.Endpoint
+		sandboxConfig.Timeout = int64(harnessCfg.Sandbox.Timeout)
+		sandboxConfig.Plugins = &PluginsConfig{
+			Load: &PluginsLoadConfig{
+				Paths: []string{pluginDir},
+			},
 		}
 	}
 
@@ -342,46 +651,6 @@ func (c *ConfigConverter) convertModelListFromSpec(models []v1.ModelConfig) []*M
 		result[i] = &ModelDefinitionConfig{
 			ID:   m.Name,
 			Name: m.Name,
-		}
-	}
-	return result
-}
-
-// convertMCPServers converts MCPServerInfo to OpenClaw MCP servers.
-func (c *ConfigConverter) convertMCPServers(servers []handler.MCPServerInfo) []*MCPServerConfig {
-	if len(servers) == 0 {
-		return nil
-	}
-
-	result := make([]*MCPServerConfig, len(servers))
-	for i, s := range servers {
-		result[i] = &MCPServerConfig{
-			Name:    s.Name,
-			Type:    s.Type,
-			Command: s.Command,
-			Args:    s.Args,
-			URL:     s.Endpoint,
-			Allowed: s.Allowed,
-		}
-	}
-	return result
-}
-
-// convertMCPServersFromSpec converts spec MCP servers to OpenClaw MCP servers.
-func (c *ConfigConverter) convertMCPServersFromSpec(servers []v1.MCPServerConfig) []*MCPServerConfig {
-	if len(servers) == 0 {
-		return nil
-	}
-
-	result := make([]*MCPServerConfig, len(servers))
-	for i, s := range servers {
-		result[i] = &MCPServerConfig{
-			Name:    s.Name,
-			Type:    s.Type,
-			Command: s.Command,
-			Args:    s.Args,
-			URL:     s.URL,
-			Allowed: s.Allowed,
 		}
 	}
 	return result
@@ -422,7 +691,7 @@ func (c *ConfigConverter) convertSkillItemsFromSpec(skills []v1.SkillConfig) []*
 	return result
 }
 
-// applySpecOverrides applies spec overrides to agent config.
+// applySpecOverrides applies HarnessOverrideSpec from AIAgentSpec.
 func (c *ConfigConverter) applySpecOverrides(cfg *AgentConfig, override v1.HarnessOverrideSpec) {
 	// Apply skills overrides
 	for _, skillsOverride := range override.Skills {
@@ -448,14 +717,15 @@ func (c *ConfigConverter) applySpecOverrides(cfg *AgentConfig, override v1.Harne
 
 // OpenClawConfig represents the full OpenClaw config file structure.
 type OpenClawConfig struct {
-	Agents  *AgentsConfig   `json:"agents,omitempty"`
-	Models  *ModelsConfig   `json:"models,omitempty"`
-	Skills  *SkillsConfig   `json:"skills,omitempty"`
-	Tools   *ToolsConfig    `json:"tools,omitempty"`
-	Memory  *MemoryConfig   `json:"memory,omitempty"`
-	Gateway *GatewayConfig  `json:"gateway,omitempty"`
-	Channels *ChannelsConfig `json:"channels,omitempty"`
-	MCP     *MCPConfig      `json:"mcp,omitempty"`
+	Agents   *AgentsConfig    `json:"agents,omitempty"`
+	Models   *ModelsConfig    `json:"models,omitempty"`
+	Skills   *SkillsConfig    `json:"skills,omitempty"`
+	Tools    *ToolsConfig     `json:"tools,omitempty"`
+	Memory   *MemoryConfig    `json:"memory,omitempty"`
+	Gateway  *GatewayConfig   `json:"gateway,omitempty"`
+	Channels *ChannelsConfig  `json:"channels,omitempty"`
+	Sandbox  *SandboxConfig   `json:"sandbox,omitempty"`
+	Plugins  *PluginsConfig   `json:"plugins,omitempty"`
 }
 
 // AgentsConfig represents agents configuration.
@@ -466,21 +736,24 @@ type AgentsConfig struct {
 
 // AgentDefaultsConfig represents default agent configuration.
 type AgentDefaultsConfig struct {
-	Model    *AgentModelConfig   `json:"model,omitempty"`
-	Sandbox  *AgentSandboxConfig `json:"sandbox,omitempty"`
-	Identity *IdentityConfig     `json:"identity,omitempty"`
+	Model            *AgentModelConfig   `json:"model,omitempty"`
+	Identity         *IdentityConfig     `json:"identity,omitempty"`
+	ThinkingDefault  string              `json:"thinkingDefault,omitempty"`
+	ReasoningDefault string              `json:"reasoningDefault,omitempty"`
+	FastModeDefault  bool                `json:"fastModeDefault,omitempty"`
 }
 
 // AgentConfig represents a single agent configuration.
 type AgentConfig struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Workspace   string            `json:"workspace,omitempty"`
-	Model       *AgentModelConfig `json:"model,omitempty"`
-	Skills      []string          `json:"skills,omitempty"`
-	Tools       []string          `json:"tools,omitempty"`
-	Runtime     *RuntimeConfig    `json:"runtime,omitempty"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name,omitempty"`
+	Description string              `json:"description,omitempty"`
+	Workspace   string              `json:"workspace,omitempty"`
+	Model       *AgentModelConfig   `json:"model,omitempty"`
+	Skills      []string            `json:"skills,omitempty"`
+	Tools       *AgentToolsConfig   `json:"tools,omitempty"`
+	Identity    *IdentityConfig     `json:"identity,omitempty"`
+	Subagents   *SubagentsConfigOpenClaw `json:"subagents,omitempty"`
 }
 
 // AgentModelConfig represents agent model configuration.
@@ -491,28 +764,36 @@ type AgentModelConfig struct {
 	MaxTokens   int      `json:"maxTokens,omitempty"`
 }
 
-// AgentSandboxConfig represents agent sandbox configuration.
-type AgentSandboxConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
-	Mode    string `json:"mode,omitempty"`
+// AgentToolsConfig represents agent tools configuration.
+type AgentToolsConfig struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
 }
 
-// RuntimeConfig represents agent runtime configuration.
-type RuntimeConfig struct {
-	Type string `json:"type,omitempty"`
+// IdentityConfig represents agent identity configuration.
+type IdentityConfig struct {
+	Name   string `json:"name,omitempty"`
+	Avatar string `json:"avatar,omitempty"`
+}
+
+// SubagentsConfigOpenClaw represents sub-agent configuration.
+type SubagentsConfigOpenClaw struct {
+	AllowAgents    []string          `json:"allowAgents,omitempty"`
+	Model          *AgentModelConfig `json:"model,omitempty"`
+	RequireAgentID bool              `json:"requireAgentId,omitempty"`
 }
 
 // ModelsConfig represents models configuration.
 type ModelsConfig struct {
-	Mode      string                        `json:"mode,omitempty"`
+	Mode      string                         `json:"mode,omitempty"`
 	Providers map[string]*ModelProviderConfig `json:"providers,omitempty"`
 }
 
 // ModelProviderConfig represents a model provider.
 type ModelProviderConfig struct {
-	BaseURL string                `json:"baseUrl,omitempty"`
-	APIKey  string                `json:"apiKey,omitempty"`
-	Models  []*ModelDefinitionConfig `json:"models,omitempty"`
+	BaseURL string                     `json:"baseUrl,omitempty"`
+	APIKey  string                     `json:"apiKey,omitempty"`
+	Models  []*ModelDefinitionConfig   `json:"models,omitempty"`
 }
 
 // ModelDefinitionConfig represents a model definition.
@@ -523,9 +804,9 @@ type ModelDefinitionConfig struct {
 
 // SkillsConfig represents skills configuration.
 type SkillsConfig struct {
-	HubType   string            `json:"hubType,omitempty"`
-	Endpoint  string            `json:"endpoint,omitempty"`
-	LocalPath string            `json:"localPath,omitempty"`
+	HubType   string             `json:"hubType,omitempty"`
+	Endpoint  string             `json:"endpoint,omitempty"`
+	LocalPath string             `json:"localPath,omitempty"`
 	Skills    []*SkillItemConfig `json:"skills,omitempty"`
 }
 
@@ -545,47 +826,27 @@ type MemoryConfig struct {
 	Persistence bool   `json:"persistence,omitempty"`
 }
 
-// MCPConfig represents MCP configuration.
-type MCPConfig struct {
-	RegistryType string             `json:"registryType,omitempty"`
-	Endpoint     string             `json:"endpoint,omitempty"`
-	Servers      []*MCPServerConfig `json:"servers,omitempty"`
-}
-
-// MCPServerConfig represents an MCP server.
-type MCPServerConfig struct {
-	Name    string   `json:"name"`
-	Type    string   `json:"type,omitempty"`
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	URL     string   `json:"url,omitempty"`
-	Allowed bool     `json:"allowed,omitempty"`
-}
-
-// SandboxConfig represents sandbox configuration.
-type SandboxConfig struct {
-	Mode      string          `json:"mode,omitempty"`
-	Endpoint  string          `json:"endpoint,omitempty"`
-	Timeout   int64           `json:"timeout,omitempty"`
-	Resources *ResourceConfig `json:"resources,omitempty"`
-}
-
-// ResourceConfig represents resource limits.
-type ResourceConfig struct {
-	CPU    string `json:"cpu,omitempty"`
-	Memory string `json:"memory,omitempty"`
-}
-
 // GatewayConfig represents gateway configuration.
 type GatewayConfig struct {
-	Mode string `json:"mode,omitempty"`
-	Host string `json:"host,omitempty"`
-	Port int    `json:"port,omitempty"`
+	Mode          string           `json:"mode,omitempty"`
+	Host          string           `json:"host,omitempty"`
+	Port          int              `json:"port,omitempty"`
+	AuthMode      string           `json:"authMode,omitempty"`
+	ControlUI     *ControlUIConfig `json:"controlUi,omitempty"`
+	TrustedProxies []string        `json:"trustedProxies,omitempty"`
+}
+
+// ControlUIConfig represents Control UI configuration.
+type ControlUIConfig struct {
+	Enabled        bool     `json:"enabled,omitempty"`
+	BasePath       string   `json:"basePath,omitempty"`
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
 }
 
 // ToolsConfig represents tools configuration.
 type ToolsConfig struct {
 	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
 }
 
 // ChannelsConfig represents channels configuration.
@@ -613,17 +874,37 @@ type SlackConfig struct {
 	Token   string `json:"token,omitempty"`
 }
 
-// IdentityConfig represents agent identity configuration.
-type IdentityConfig struct {
-	Name   string `json:"name,omitempty"`
-	Avatar string `json:"avatar,omitempty"`
-}
-
 // HarnessSection represents harness-only config section.
 type HarnessSection struct {
-	Model   *ModelsConfig   `json:"model,omitempty"`
-	Skills  *SkillsConfig   `json:"skills,omitempty"`
-	Memory  *MemoryConfig   `json:"memory,omitempty"`
-	MCP     *MCPConfig      `json:"mcp,omitempty"`
-	Sandbox *SandboxConfig  `json:"sandbox,omitempty"`
+	Model   *ModelsConfig  `json:"model,omitempty"`
+	Skills  *SkillsConfig  `json:"skills,omitempty"`
+	Memory  *MemoryConfig  `json:"memory,omitempty"`
+}
+
+// SandboxConfig represents sandbox configuration.
+// For External Sandbox, includes plugins configuration for harness-bridge.
+type SandboxConfig struct {
+	// Mode: "external" or "embedded"
+	Mode string `json:"mode"`
+
+	// Endpoint for External Sandbox (HTTP API URL)
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Timeout for sandbox operations (seconds)
+	Timeout int64 `json:"timeout,omitempty"`
+
+	// Plugins configuration for External Sandbox
+	Plugins *PluginsConfig `json:"plugins,omitempty"`
+}
+
+// PluginsConfig represents OpenClaw plugins configuration.
+type PluginsConfig struct {
+	// Load configuration for plugin discovery
+	Load *PluginsLoadConfig `json:"load,omitempty"`
+}
+
+// PluginsLoadConfig specifies plugin discovery paths.
+type PluginsLoadConfig struct {
+	// Paths to search for plugins
+	Paths []string `json:"paths,omitempty"`
 }

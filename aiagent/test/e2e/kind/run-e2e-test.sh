@@ -328,7 +328,7 @@ install_crds() {
         crd/agentruntimes.agent.ai || true
     kubectl wait --for condition=established \
         --timeout=60s \
-        crd/aigents.agent.ai || true
+        crd/aiagents.agent.ai || true
     kubectl wait --for condition=established \
         --timeout=60s \
         crd/harnesses.agent.ai || true
@@ -413,7 +413,7 @@ verify_adk_shared() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check multiple AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-shared-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aiagent -l runtime=adk-shared-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" -lt 2 ]; then
         echo "    ❌ ERROR: Expected at least 2 agents, got ${AGENT_COUNT}"
         return 1
@@ -482,7 +482,7 @@ verify_adk_isolated() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check multiple AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=adk-isolated-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aiagent -l runtime=adk-isolated-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" -lt 2 ]; then
         echo "    ❌ ERROR: Expected at least 2 agents, got ${AGENT_COUNT}"
         return 1
@@ -535,7 +535,7 @@ verify_openclaw() {
     echo "    ✓ AgentRuntime phase: Running"
 
     # Check exactly 2 AIAgents
-    AGENT_COUNT=$(kubectl get aigent -l runtime=openclaw-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
+    AGENT_COUNT=$(kubectl get aiagent -l runtime=openclaw-runtime -n ${NS} -o json 2>/dev/null | jq '.items | length' || echo "0")
     if [ "$AGENT_COUNT" != 2 ]; then
         echo "    ❌ ERROR: Expected 2 AIAgent CRDs (openclaw-1, openclaw-2), got ${AGENT_COUNT}"
         return 1
@@ -543,8 +543,8 @@ verify_openclaw() {
     echo "    ✓ AIAgent count: ${AGENT_COUNT}"
 
     # Check agent names
-    AGENT_1=$(kubectl get aigent openclaw-1 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-    AGENT_2=$(kubectl get aigent openclaw-2 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    AGENT_1=$(kubectl get aiagent openclaw-1 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    AGENT_2=$(kubectl get aiagent openclaw-2 -n ${NS} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     if [ "$AGENT_1" != "openclaw-1" ] || [ "$AGENT_2" != "openclaw-2" ]; then
         echo "    ❌ ERROR: Expected AIAgent names openclaw-1 and openclaw-2"
         return 1
@@ -701,7 +701,7 @@ show_status() {
 
     echo ""
     echo ">>> AIAgents:"
-    kubectl get aigent -n aiagent-system || echo "    No AIAgents found"
+    kubectl get aiagent -n aiagent-system || echo "    No AIAgents found"
 
     echo ""
     echo ">>> All Pods:"

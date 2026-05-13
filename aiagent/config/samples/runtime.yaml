@@ -18,31 +18,21 @@ spec:
       value: "/shared/workdir"
     - name: CONFIG_DIR
       value: "/shared/config"
-    resources:
-      limits:
-        cpu: "1"
-        memory: "1Gi"
-      requests:
-        cpu: "200m"
-        memory: "256Mi"
 
   # Framework Container - provides image content via ImageVolume
   # ENTRYPOINT: pause (DUMMY container)
   agentFramework:
     image: aiagent/adk-framework:latest
     type: adk-go
-    resources:
-      limits:
-        cpu: "2"
-        memory: "2Gi"
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
 
+  # Harness references (shared capabilities) - array of HarnessReference
   harness:
   - name: model-harness-deepseek
+    namespace: default
   - name: memory-harness-inmemory
+    namespace: default
   - name: sandbox-harness-embedded
+    namespace: default
 
   replicas: 1
 ---
@@ -63,32 +53,26 @@ spec:
       value: "isolated"
     - name: FRAMEWORK_BIN
       value: "/framework-rootfs/bin/adk-framework"
-    resources:
-      limits:
-        cpu: "1"
-        memory: "1Gi"
-      requests:
-        cpu: "200m"
-        memory: "256Mi"
 
   agentFramework:
     image: aiagent/adk-framework:latest
     type: adk-go
-    resources:
-      limits:
-        cpu: "2"
-        memory: "2Gi"
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
 
+  # Harness references - array of HarnessReference
   harness:
   - name: model-harness-deepseek
+    namespace: default
 
   replicas: 1
 ---
 # Sample AgentRuntime for OpenClaw framework (Gateway Mode)
 # Handler communicates with OpenClaw Gateway via HTTP
+#
+# Architecture:
+# - Each AIAgent → One Gateway process (handler manages multiple instances)
+# - Each Gateway manages internal sub-agents (invisible to Kubernetes)
+# - agentConfig defines Gateway port, internal agents, overrides
+# - Harness provides shared capabilities (Model, Skills, Sandbox)
 apiVersion: agent.ai/v1
 kind: AgentRuntime
 metadata:
@@ -107,29 +91,72 @@ spec:
       value: "/shared/workdir"
     - name: CONFIG_DIR
       value: "/shared/config"
-    resources:
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
-      requests:
-        cpu: "100m"
-        memory: "128Mi"
+    # Plugin directory for harness-bridge (External Sandbox)
+    - name: PLUGIN_DIR
+      value: "/etc/aiagent/plugins"
 
   # Framework Container - provides OpenClaw binary via ImageVolume
   agentFramework:
     image: aiagent/openclaw-framework:latest
     type: openclaw
-    resources:
-      limits:
-        cpu: "2"
-        memory: "4Gi"
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
 
+  # Harness references (shared capabilities) - array of HarnessReference
+  # Model and Skills come from Harness CRDs
   harness:
   - name: model-harness-deepseek
+    namespace: default
+  - name: skills-harness-local
+    namespace: default
   - name: memory-harness-inmemory
+    namespace: default
+
+  replicas: 1
+---
+# Sample AgentRuntime for OpenClaw with External Sandbox
+# Sandbox is configured via Harness CR (not in agentConfig)
+# Handler generates harness-bridge plugin for tool interception
+#
+# Tool Flow:
+#   Tool call → before_tool_call hook (harness-bridge plugin)
+#            → Check if intercepted (read/write/edit/exec/process)
+#            → If yes: HTTP POST to External Sandbox <endpoint>/tools/<toolName>
+#            → Result embedded in blockReason: REMOTE_EXECUTION_SUCCESS:<json>
+apiVersion: agent.ai/v1
+kind: AgentRuntime
+metadata:
+  name: openclaw-external-sandbox-runtime
+  namespace: default
+spec:
+  processMode: isolated
+
+  agentHandler:
+    image: aiagent/openclaw-handler:latest
+    env:
+    - name: BASE_GATEWAY_PORT
+      value: "18791"
+    - name: WORK_DIR
+      value: "/shared/workdir"
+    - name: CONFIG_DIR
+      value: "/shared/config"
+    - name: PLUGIN_DIR
+      value: "/etc/aiagent/plugins/harness-bridge"
+    # External Sandbox URL (passed to plugin)
+    - name: EXTERNAL_SANDBOX_URL
+      value: "http://sandbox-service.default.svc.cluster.local:9000"
+
+  agentFramework:
+    image: aiagent/openclaw-framework:latest
+    type: openclaw
+
+  # Harness references - array of HarnessReference
+  harness:
+  - name: model-harness-openai
+    namespace: default
+  - name: skills-harness-local
+    namespace: default
+  # External Sandbox Harness - enables tool interception
+  - name: sandbox-harness-external
+    namespace: default
 
   replicas: 1
 ---
@@ -147,26 +174,14 @@ spec:
     env:
     - name: CUSTOM_FRAMEWORK_ENDPOINT
       value: "localhost:9000"
-    resources:
-      limits:
-        cpu: "1"
-        memory: "1Gi"
-      requests:
-        cpu: "200m"
-        memory: "256Mi"
 
   agentFramework:
     image: my-org/my-framework:latest
     type: custom
-    resources:
-      limits:
-        cpu: "2"
-        memory: "2Gi"
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
 
+  # Harness references - array of HarnessReference
   harness:
-  - name: model-harness-custom
+  - name: model-harness-deepseek
+    namespace: default
 
   replicas: 1

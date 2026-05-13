@@ -84,9 +84,6 @@ type AgentHandlerSpec struct {
 
 	// Env environment variables.
 	Env []EnvVar `json:"env,omitempty"`
-
-	// Resources for the handler container.
-	Resources *ContainerResources `json:"resources,omitempty"`
 }
 
 // AgentFrameworkSpec defines the Agent Framework container.
@@ -109,9 +106,6 @@ type AgentFrameworkSpec struct {
 
 	// Env environment variables.
 	Env []EnvVar `json:"env,omitempty"`
-
-	// Resources for the framework container.
-	Resources *ContainerResources `json:"resources,omitempty"`
 }
 
 // EnvVar represents an environment variable.
@@ -177,15 +171,6 @@ type RuntimeResources struct {
 	Limits map[string]Quantity `json:"limits,omitempty"`
 
 	// Requests are resource requests for the entire Pod.
-	Requests map[string]Quantity `json:"requests,omitempty"`
-}
-
-// ContainerResources defines container-level resource requirements.
-type ContainerResources struct {
-	// Limits are resource limits for this container.
-	Limits map[string]Quantity `json:"limits,omitempty"`
-
-	// Requests are resource requests for this container.
 	Requests map[string]Quantity `json:"requests,omitempty"`
 }
 

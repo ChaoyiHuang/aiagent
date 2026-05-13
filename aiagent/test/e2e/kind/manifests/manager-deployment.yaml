@@ -23,13 +23,13 @@ rules:
   verbs: ["update"]
 # AIAgent permissions
 - apiGroups: ["agent.ai"]
-  resources: ["aigents"]
+  resources: ["aiagents"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["agent.ai"]
-  resources: ["aigents/status"]
+  resources: ["aiagents/status"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["agent.ai"]
-  resources: ["aigents/finalizers"]
+  resources: ["aiagents/finalizers"]
   verbs: ["update"]
 # Harness permissions
 - apiGroups: ["agent.ai"]

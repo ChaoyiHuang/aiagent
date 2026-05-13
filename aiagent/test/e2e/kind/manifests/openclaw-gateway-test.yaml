@@ -1,4 +1,4 @@
-# Test Case 3: OpenClaw Multiple Gateway Mode (2 个 AIAgent 对应 2 个 Gateway)
+# Test Case 3: OpenClaw Multiple Gateway Mode (2 AIAgent → 2 Gateway)
 # Architecture (Solution M - hostPath + Config Daemon):
 # ┌─────────────────────────────────────────────────────────────────┐
 # │ Config Daemon (DaemonSet on same node)                          │
@@ -12,27 +12,36 @@
 # │  Handler Container                                              │
 # │    - Reads agent-index.yaml to discover agents                  │
 # │    - Reads agent-config.json for each agent                     │
+# │    - Parses agentConfig JSON:                                   │
+# │        gateway: {port, bind, auth}                              │
+# │        agents: {defaults, list}                                 │
+# │        overrides: {allowedSkills, deniedSkills}                 │
 # │    - Starts Gateway process for each AIAgent                    │
-# │    - Each Gateway manages same internal agents                  │
+# │    - Each Gateway manages internal sub-agents                   │
 # │                                                                 │
-# │  Gateway Process #1 (AIAgent: openclaw-1)                      │
-# │    Port: 18789                                                  │
-# │    Internal agents: weather, calculator, assistant (invisible) │
+# │  Gateway Process #1 (AIAgent: openclaw-1)                       │
+# │    Port: 18789 (from agentConfig.gateway.port)                  │
+# │    Internal agents: weather, calculator, assistant              │
 # │                                                                 │
-# │  Gateway Process #2 (AIAgent: openclaw-2)                      │
-# │    Port: 18790                                                  │
-# │    Internal agents: weather, calculator, assistant (invisible) │
+# │  Gateway Process #2 (AIAgent: openclaw-2)                       │
+# │    Port: 18790 (from agentConfig.gateway.port)                  │
+# │    Internal agents: weather, calculator, assistant              │
 # │                                                                 │
 # │  Framework Container (DUMMY)                                    │
 # │    - ENTRYPOINT: pause                                          │
 # │    - ImageVolume provides OpenClaw v2026.3.8                    │
 # └─────────────────────────────────────────────────────────────────┘
 #
+# Configuration Sources:
+# - agentConfig (AIAgent CRD): Gateway port, internal agents, overrides
+# - Harness (AgentRuntime CRD): Models, Skills, Sandbox (shared)
+#
 # Kubernetes sees 2 AIAgent CRDs (openclaw-1, openclaw-2)
-# Each Gateway's internal agents (weather, calculator, assistant) are identical
+# Each Gateway's internal agents (weather, calculator, assistant) are defined
+# in agentConfig.agents.list (invisible to Kubernetes)
 
 ---
-# Harness for Model
+# Harness for Model (shared by all agents)
 apiVersion: agent.ai/v1
 kind: Harness
 metadata:
@@ -43,13 +52,16 @@ spec:
   model:
     provider: openai
     endpoint: https://api.openai.com/v1
+    authSecretRef: openai-api-key
     defaultModel: gpt-4o
     models:
     - name: gpt-4o
       allowed: true
+    - name: gpt-4o-mini
+      allowed: true
 
 ---
-# Harness for Skills
+# Harness for Skills (shared by all agents)
 apiVersion: agent.ai/v1
 kind: Harness
 metadata:
@@ -71,6 +83,40 @@ spec:
       allowed: true
 
 ---
+# Harness for Memory (shared by all agents)
+apiVersion: agent.ai/v1
+kind: Harness
+metadata:
+  namespace: aiagent-system
+  name: openclaw-memory
+spec:
+  type: memory
+  memory:
+    type: inmemory
+    ttl: 3600
+
+---
+# Harness for Sandbox (External - optional)
+# If enabled, handler generates harness-bridge plugin
+# Tools intercepted: read, write, edit, exec, process → External Sandbox
+apiVersion: agent.ai/v1
+kind: Harness
+metadata:
+  namespace: aiagent-system
+  name: openclaw-sandbox-external
+spec:
+  type: sandbox
+  sandbox:
+    type: custom
+    mode: external
+    endpoint: "http://sandbox-service.aiagent-system.svc.cluster.local:9000"
+    authSecretRef: sandbox-api-key
+    timeout: 30
+    resourceLimits:
+      cpu: "1"
+      memory: "512Mi"
+
+---
 # AgentRuntime for OpenClaw (Multiple Gateway Mode)
 apiVersion: agent.ai/v1
 kind: AgentRuntime
@@ -79,27 +125,44 @@ metadata:
   name: openclaw-runtime
 spec:
   # OpenClaw runs in gateway mode (each AIAgent gets its own Gateway instance)
+  processMode: isolated
 
   agentHandler:
     image: aiagent/openclaw-handler:test
     env:
     - name: BASE_GATEWAY_PORT
       value: "18789"
+    - name: WORK_DIR
+      value: "/shared/workdir"
+    - name: CONFIG_DIR
+      value: "/shared/config"
+    - name: PLUGIN_DIR
+      value: "/etc/aiagent/plugins"
 
   agentFramework:
     image: aiagent/openclaw-framework:test  # OpenClaw v2026.3.8
     type: openclaw
 
+  # Harness references (shared capabilities) - array of HarnessReference
   harness:
   - name: openclaw-model
+    namespace: aiagent-system
   - name: openclaw-skills
+    namespace: aiagent-system
+  - name: openclaw-memory
+    namespace: aiagent-system
+  # Optional: External Sandbox
+  # - name: openclaw-sandbox-external
+  #   namespace: aiagent-system
 
   replicas: 1
 
 ---
 # AIAgent 1: openclaw-1 with agentConfig (OpenClaw-specific configuration)
-# Kubernetes sees this as one Agent
-# Gateway internally manages weather, calculator, assistant (invisible)
+# agentConfig schema (updated):
+#   gateway: {port, bind, auth} - Gateway instance settings
+#   agents: {defaults, list} - Internal sub-agents (invisible to Kubernetes)
+#   overrides: {model, allowedSkills, deniedSkills} - Override Harness defaults
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -112,33 +175,46 @@ spec:
   runtimeRef:
     type: openclaw
     name: openclaw-runtime
-  # Framework-specific configuration (OpenClaw JSON format)
-  # This defines the internal agents that Gateway manages
+  # agentConfig: OpenClaw-specific configuration (JSON format)
+  # Handler parses this and generates OpenClaw Gateway config
   agentConfig:
+    # Gateway process settings for this instance
     gateway:
       port: 18789
-      host: "0.0.0.0"
+      bind: "loopback"
+      auth:
+        mode: "none"
+    # Internal sub-agents managed by this Gateway
+    # Model comes from Harness (openclaw-model), skills from Harness (openclaw-skills)
     agents:
-    - name: weather
-      description: "Weather information agent"
-      model: "gpt-4o"
-      tools:
-      - name: get_weather
-        type: api_call
-    - name: calculator
-      description: "Math calculation agent"
-      model: "gpt-4o"
-      tools:
-      - name: calculate
-        type: math
-    - name: assistant
-      description: "General assistant agent"
-      model: "gpt-4o"
+      defaults:
+        thinkingDefault: "medium"
+        reasoningDefault: "on"
+      list:
+      - id: "weather"
+        name: "Weather Agent"
+        skills: ["weather"]
+        identity:
+          name: "Weather Assistant"
+          avatar: "🌤️"
+        tools:
+          allow: ["read", "web_search"]
+      - id: "calculator"
+        name: "Calculator Agent"
+        skills: ["calculator"]
+        identity:
+          name: "Calculator"
+          avatar: "🔢"
+      - id: "assistant"
+        name: "General Assistant"
+        # Uses default model from Harness
+    # Override inherited Harness capabilities (cannot add new, only restrict)
+    overrides:
+      allowedSkills: ["weather", "calculator", "assistant"]
 
 ---
 # AIAgent 2: openclaw-2 with agentConfig
-# Kubernetes sees this as one Agent
-# Gateway internally manages weather, calculator, assistant (invisible)
+# Different port, same internal agents configuration
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -154,20 +230,50 @@ spec:
   agentConfig:
     gateway:
       port: 18790
-      host: "0.0.0.0"
+      bind: "loopback"
+      auth:
+        mode: "none"
     agents:
-    - name: weather
-      description: "Weather information agent"
-      model: "gpt-4o"
-      tools:
-      - name: get_weather
-        type: api_call
-    - name: calculator
-      description: "Math calculation agent"
-      model: "gpt-4o"
-      tools:
-      - name: calculate
-        type: math
-    - name: assistant
-      description: "General assistant agent"
-      model: "gpt-4o"
+      defaults:
+        thinkingDefault: "low"
+        fastModeDefault: true
+      list:
+      - id: "weather"
+        name: "Weather Agent"
+        skills: ["weather"]
+        identity:
+          name: "Weather Assistant"
+          avatar: "🌤️"
+      - id: "calculator"
+        name: "Calculator Agent"
+        skills: ["calculator"]
+        identity:
+          name: "Calculator"
+          avatar: "🔢"
+      - id: "assistant"
+        name: "General Assistant"
+    # Different overrides for this instance
+    overrides:
+      allowedSkills: ["weather", "assistant"]
+      deniedSkills: ["calculator"]
+
+---
+# Secrets for API keys
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: aiagent-system
+  name: openai-api-key
+type: Opaque
+stringData:
+  api-key: "test-api-key-placeholder"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: aiagent-system
+  name: sandbox-api-key
+type: Opaque
+stringData:
+  api-key: "test-sandbox-api-key-placeholder"

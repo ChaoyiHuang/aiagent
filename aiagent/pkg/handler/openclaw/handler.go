@@ -11,6 +11,10 @@
 // │   3. Handler manages multiple Gateway instances                 │
 // │   4. Each Gateway manages its internal sub-agents               │
 // └─────────────────────────────────────────────────────────────────┘
+//
+// Configuration Sources:
+// - agentConfig (from AIAgentSpec): Gateway port, internal agents, overrides
+// - Harness (from AgentRuntime): Models, Skills, Memory (shared)
 package openclaw
 
 import (
@@ -76,7 +80,7 @@ func NewOpenClawHandler(cfg *handler.HandlerConfig) *OpenClawHandler {
 		Name:         "OpenClaw",
 		Version:      "v2026.3.8",
 		Description:  "OpenClaw Multi-channel AI Gateway",
-		Capabilities: []string{"channels", "skills", "mcp", "tools", "sessions", "agents"},
+		Capabilities: []string{"channels", "skills", "tools", "sessions", "agents"},
 		ConfigFormat: "json",
 	}
 
@@ -115,6 +119,7 @@ func (h *OpenClawHandler) GetBasePort() int {
 // ============================================================
 
 // GenerateFrameworkConfig generates the main openclaw.json config file.
+// Combines agentConfig (agent-specific) with Harness (shared capabilities).
 func (h *OpenClawHandler) GenerateFrameworkConfig(spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig) ([]byte, error) {
 	return h.converter.ConvertToOpenClawConfig(spec, harnessCfg)
 }
@@ -134,6 +139,52 @@ func (h *OpenClawHandler) GenerateHarnessConfig(harnessCfg *handler.HarnessConfi
 }
 
 // ============================================================
+// Gateway Port Resolution from agentConfig
+// ============================================================
+
+// resolveGatewayPort extracts Gateway port from agentConfig or calculates default.
+func (h *OpenClawHandler) resolveGatewayPort(spec *v1.AIAgentSpec, instanceIndex int) int {
+	// Try to parse port from agentConfig
+	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {
+		agentConfig, err := h.converter.ParseAgentConfig(spec.AgentConfig.Raw)
+		if err == nil && agentConfig.Gateway != nil && agentConfig.Gateway.Port > 0 {
+			return agentConfig.Gateway.Port
+		}
+	}
+
+	// Calculate default port: basePort + instanceIndex
+	return h.basePort + instanceIndex
+}
+
+// resolveGatewayBind extracts Gateway bind mode from agentConfig.
+func (h *OpenClawHandler) resolveGatewayBind(spec *v1.AIAgentSpec) string {
+	defaultBind := "loopback"
+
+	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {
+		agentConfig, err := h.converter.ParseAgentConfig(spec.AgentConfig.Raw)
+		if err == nil && agentConfig.Gateway != nil && agentConfig.Gateway.Bind != "" {
+			return agentConfig.Gateway.Bind
+		}
+	}
+
+	return defaultBind
+}
+
+// resolveGatewayAuth extracts Gateway auth mode from agentConfig.
+func (h *OpenClawHandler) resolveGatewayAuth(spec *v1.AIAgentSpec) string {
+	defaultAuth := "none"
+
+	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {
+		agentConfig, err := h.converter.ParseAgentConfig(spec.AgentConfig.Raw)
+		if err == nil && agentConfig.Gateway != nil && agentConfig.Gateway.Auth != nil {
+			return agentConfig.Gateway.Auth.Mode
+		}
+	}
+
+	return defaultAuth
+}
+
+// ============================================================
 // Core Responsibility #2: Framework Process Management
 // ============================================================
 
@@ -142,8 +193,9 @@ func (h *OpenClawHandler) PrepareWorkDirectory(ctx context.Context, workDir stri
 	// Create OpenClaw config directory structure
 	configDir := filepath.Join(workDir, "openclaw-config")
 	agentsDir := filepath.Join(workDir, "agents")
+	stateDir := filepath.Join(workDir, "state")
 
-	dirs := []string{configDir, agentsDir}
+	dirs := []string{configDir, agentsDir, stateDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -176,6 +228,10 @@ func (h *OpenClawHandler) StartFramework(ctx context.Context, frameworkBin strin
 }
 
 // StartFrameworkInstance starts a Gateway process for a specific agent.
+// Gateway startup parameters derived from agentConfig:
+//   --port    from agentConfig.gateway.port (or basePort + instanceIndex)
+//   --bind    from agentConfig.gateway.bind (default: loopback)
+//   --auth    from agentConfig.gateway.auth.mode (default: none)
 func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID string, configPath string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -185,9 +241,15 @@ func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID
 		return fmt.Errorf("gateway instance %s already running", instanceID)
 	}
 
-	// Calculate port for this instance (base + index)
+	// Calculate port for this instance
 	instanceIndex := len(h.processStates)
 	port := h.basePort + instanceIndex
+
+	// Try to load port from saved config (if agentConfig specified it)
+	savedPort, err := h.loadPortFromConfig(instanceID)
+	if err == nil && savedPort > 0 {
+		port = savedPort
+	}
 
 	// Prepare command
 	// Gateway command: openclaw gateway --allow-unconfigured --port <port>
@@ -226,6 +288,33 @@ func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID
 	}
 
 	return nil
+}
+
+// loadPortFromConfig attempts to load Gateway port from saved agentConfig.
+func (h *OpenClawHandler) loadPortFromConfig(instanceID string) (int, error) {
+	// Look for saved agentConfig in configDir
+	configPath := filepath.Join(h.configDir, fmt.Sprintf("%s-agentconfig.json", instanceID))
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, err
+	}
+
+	agentConfig := &AgentConfigJSON{}
+	if err := json.Unmarshal(data, agentConfig); err != nil {
+		return 0, err
+	}
+
+	if agentConfig.Gateway != nil && agentConfig.Gateway.Port > 0 {
+		return agentConfig.Gateway.Port, nil
+	}
+
+	return 0, fmt.Errorf("no port in agentConfig")
+}
+
+// saveAgentConfig saves agentConfig for later port resolution.
+func (h *OpenClawHandler) saveAgentConfig(instanceID string, raw []byte) error {
+	configPath := filepath.Join(h.configDir, fmt.Sprintf("%s-agentconfig.json", instanceID))
+	return os.WriteFile(configPath, raw, 0644)
 }
 
 // StopFramework stops all Gateway processes.
@@ -322,7 +411,8 @@ func (h *OpenClawHandler) AdaptModelHarness(harness handler.ModelHarnessInterfac
 }
 
 func (h *OpenClawHandler) AdaptMCPHarness(harness handler.MCPHarnessInterface) ([]byte, error) {
-	return h.converter.ConvertMCPHarness(harness)
+	// MCP not supported - return nil
+	return nil, nil
 }
 
 func (h *OpenClawHandler) AdaptMemoryHarness(harness handler.MemoryHarnessInterface) ([]byte, error) {
@@ -330,7 +420,18 @@ func (h *OpenClawHandler) AdaptMemoryHarness(harness handler.MemoryHarnessInterf
 }
 
 func (h *OpenClawHandler) AdaptSandboxHarness(harness handler.SandboxHarnessInterface) ([]byte, error) {
-	return h.converter.ConvertSandboxHarness(harness)
+	if harness == nil {
+		return nil, nil
+	}
+
+	// External Sandbox: Generate harness-bridge plugin
+	if harness.IsExternal() {
+		pluginDir := filepath.Join(h.configDir, "plugins", "harness-bridge")
+		return h.converter.ConvertSandboxHarness(harness, pluginDir)
+	}
+
+	// Embedded Sandbox: No plugin needed
+	return h.converter.ConvertSandboxHarness(harness, "")
 }
 
 func (h *OpenClawHandler) AdaptSkillsHarness(harness handler.SkillsHarnessInterface) ([]byte, error) {
@@ -341,9 +442,16 @@ func (h *OpenClawHandler) AdaptSkillsHarness(harness handler.SkillsHarnessInterf
 // Core Responsibility #4: Agent Lifecycle (via Gateway)
 // ============================================================
 
-// LoadAgent creates agent wrapper.
+// LoadAgent creates agent wrapper and prepares Gateway config.
 func (h *OpenClawHandler) LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig) (agent.Agent, error) {
 	agentID := spec.Description
+
+	// Save agentConfig for port resolution
+	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {
+		if err := h.saveAgentConfig(agentID, spec.AgentConfig.Raw); err != nil {
+			// Non-critical error, continue
+		}
+	}
 
 	// Generate config file for this Gateway instance
 	configData, err := h.GenerateFrameworkConfig(spec, harnessCfg)

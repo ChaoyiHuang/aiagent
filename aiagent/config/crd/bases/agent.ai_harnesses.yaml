@@ -1,8 +1,9 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: harnesses.agent.ai
 spec:
   group: agent.ai
@@ -13,26 +14,534 @@ spec:
     singular: harness
   scope: Namespaced
   versions:
-  - name: v1
-    served: true
-    storage: true
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        type: object
+        description: |-
+          Harness is an independent CRD for AI Agent scaffolding capabilities.
+          It defines configurations for various external capabilities that
+          agents can access through the unified abstraction layer.
         properties:
           apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
-            type: object
-            required:
-            - type
+            description: |-
+              HarnessSpec defines the desired state of Harness.
+              Each harness has a specific type and corresponding configuration.
             properties:
+              guardrail:
+                description: Guardrail configuration for safety guardrails.
+                properties:
+                  enabled:
+                    description: Enabled turns on guardrails.
+                    type: boolean
+                  endpoint:
+                    description: Endpoint is the guardrail service endpoint.
+                    type: string
+                  rules:
+                    description: Rules guardrail rules configuration.
+                    items:
+                      description: GuardrailRule defines a guardrail rule.
+                      properties:
+                        action:
+                          description: Action when rule is triggered.
+                          enum:
+                          - warn
+                          - block
+                          - log
+                          type: string
+                        config:
+                          description: Config rule-specific configuration.
+                          x-kubernetes-preserve-unknown-fields: true
+                        name:
+                          description: Name is the rule identifier.
+                          type: string
+                        severity:
+                          description: Severity of the rule.
+                          enum:
+                          - low
+                          - medium
+                          - high
+                          - critical
+                          type: string
+                        type:
+                          description: Type is the rule type.
+                          type: string
+                      required:
+                      - action
+                      - name
+                      - severity
+                      - type
+                      type: object
+                    type: array
+                  type:
+                    description: Type identifies the guardrail type.
+                    enum:
+                    - neuron
+                    - builtin
+                    - custom
+                    type: string
+                required:
+                - enabled
+                - type
+                type: object
+              knowledge:
+                description: Knowledge configuration for knowledge base/RAG.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef references credentials.
+                    type: string
+                  collections:
+                    description: Collections available knowledge collections.
+                    items:
+                      type: string
+                    type: array
+                  embeddingModel:
+                    description: EmbeddingModel model for embeddings.
+                    type: string
+                  endpoint:
+                    description: Endpoint is the knowledge store endpoint.
+                    type: string
+                  type:
+                    description: Type identifies the knowledge store type.
+                    enum:
+                    - vector
+                    - document
+                    - hybrid
+                    type: string
+                required:
+                - type
+                type: object
+              mcp:
+                description: MCP configuration for Model Context Protocol registry.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef references credentials for the registry.
+                    type: string
+                  discoveryEnabled:
+                    description: DiscoveryEnabled enables automatic server discovery.
+                    type: boolean
+                  endpoint:
+                    description: Endpoint is the registry endpoint URL.
+                    type: string
+                  registryType:
+                    description: RegistryType identifies the registry type.
+                    enum:
+                    - builtin
+                    - external
+                    - custom
+                    type: string
+                  servers:
+                    description: Servers lists available MCP servers.
+                    items:
+                      description: MCPServerConfig defines an MCP server configuration.
+                      properties:
+                        allowed:
+                          description: Allowed indicates if this server is accessible.
+                          type: boolean
+                        args:
+                          description: Args for the command.
+                          items:
+                            type: string
+                          type: array
+                        command:
+                          description: Command to execute for stdio servers.
+                          type: string
+                        env:
+                          additionalProperties:
+                            type: string
+                          description: Env environment variables.
+                          type: object
+                        name:
+                          description: Name is the server identifier.
+                          type: string
+                        type:
+                          description: Type is the server type (builtin, stdio, http,
+                            etc).
+                          type: string
+                        url:
+                          description: URL for HTTP servers.
+                          type: string
+                      required:
+                      - allowed
+                      - name
+                      - type
+                      type: object
+                    type: array
+                required:
+                - registryType
+                type: object
+              memory:
+                description: Memory configuration for memory storage.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef references credentials.
+                    type: string
+                  endpoint:
+                    description: Endpoint is the memory backend endpoint.
+                    type: string
+                  maxSize:
+                    description: MaxSize maximum storage size.
+                    type: string
+                  persistenceEnabled:
+                    description: PersistenceEnabled enables data persistence.
+                    type: boolean
+                  ttl:
+                    description: TTL time-to-live for entries in seconds.
+                    format: int32
+                    type: integer
+                  type:
+                    description: Type identifies the memory backend type.
+                    enum:
+                    - inmemory
+                    - redis
+                    - file
+                    - postgres
+                    type: string
+                required:
+                - type
+                type: object
+              model:
+                description: Model configuration for LLM model integration.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef references the secret containing API
+                      credentials.
+                    type: string
+                  defaultModel:
+                    description: DefaultModel is the default model to use.
+                    type: string
+                  endpoint:
+                    description: Endpoint is the API endpoint URL.
+                    type: string
+                  models:
+                    description: Models lists available models with their configurations.
+                    items:
+                      description: ModelConfig defines a specific model's configuration.
+                      properties:
+                        allowed:
+                          description: Allowed indicates if this model is accessible.
+                          type: boolean
+                        costPerToken:
+                          description: CostPerToken cost per token for billing.
+                          type: number
+                        maxTokens:
+                          description: MaxTokens maximum tokens for this model.
+                          format: int32
+                          type: integer
+                        name:
+                          description: Name is the model identifier.
+                          type: string
+                        rateLimit:
+                          description: RateLimit override for this specific model.
+                          properties:
+                            concurrentRequests:
+                              description: ConcurrentRequests limits concurrent requests.
+                              format: int32
+                              type: integer
+                            requestsPerMinute:
+                              description: RequestsPerMinute limits requests per minute.
+                              format: int32
+                              type: integer
+                            tokensPerMinute:
+                              description: TokensPerMinute limits tokens per minute.
+                              format: int32
+                              type: integer
+                          required:
+                          - requestsPerMinute
+                          type: object
+                      required:
+                      - allowed
+                      - name
+                      type: object
+                    type: array
+                  provider:
+                    description: Provider identifies the model provider.
+                    enum:
+                    - deepseek
+                    - openai
+                    - anthropic
+                    - google
+                    - azure
+                    - aws
+                    - local
+                    type: string
+                  rateLimit:
+                    description: RateLimit defines rate limiting configuration.
+                    properties:
+                      concurrentRequests:
+                        description: ConcurrentRequests limits concurrent requests.
+                        format: int32
+                        type: integer
+                      requestsPerMinute:
+                        description: RequestsPerMinute limits requests per minute.
+                        format: int32
+                        type: integer
+                      tokensPerMinute:
+                        description: TokensPerMinute limits tokens per minute.
+                        format: int32
+                        type: integer
+                    required:
+                    - requestsPerMinute
+                    type: object
+                  retryConfig:
+                    description: RetryConfig defines retry behavior.
+                    properties:
+                      initialDelayMs:
+                        description: InitialDelayMs initial retry delay in milliseconds.
+                        format: int32
+                        type: integer
+                      maxDelayMs:
+                        description: MaxDelayMs maximum retry delay in milliseconds.
+                        format: int32
+                        type: integer
+                      maxRetries:
+                        description: MaxRetries maximum number of retries.
+                        format: int32
+                        type: integer
+                      multiplier:
+                        description: Multiplier for exponential backoff.
+                        type: number
+                    required:
+                    - initialDelayMs
+                    - maxDelayMs
+                    - maxRetries
+                    type: object
+                required:
+                - models
+                - provider
+                type: object
+              policy:
+                description: Policy configuration for policy control.
+                properties:
+                  defaultAction:
+                    description: DefaultAction default action when no rule matches.
+                    type: string
+                  rules:
+                    description: Rules policy rules.
+                    items:
+                      description: PolicyRule defines a policy rule.
+                      properties:
+                        action:
+                          description: Action when condition is met.
+                          type: string
+                        condition:
+                          description: Condition for the rule.
+                          type: string
+                        name:
+                          description: Name is the rule identifier.
+                          type: string
+                      required:
+                      - action
+                      - condition
+                      - name
+                      type: object
+                    type: array
+                type: object
+              sandbox:
+                description: Sandbox configuration for execution isolation.
+                properties:
+                  apiKey:
+                    description: |-
+                      APIKey is the authentication key for External Sandbox.
+                      Should reference a Secret in production: authSecretRef.
+                    type: string
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef references a Secret containing the API key.
+                      Preferred over inline apiKey for security.
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint is the External Sandbox API URL (e.g., "http://sandbox.example.com:9000").
+                      Only applicable for external mode.
+                    type: string
+                  mode:
+                    description: Mode defines sandbox operation mode.
+                    enum:
+                    - external
+                    - embedded
+                    type: string
+                  networkPolicy:
+                    description: NetworkPolicy network isolation policy.
+                    properties:
+                      allowInbound:
+                        description: AllowInbound allows inbound connections.
+                        type: boolean
+                      allowOutbound:
+                        description: AllowOutbound allows outbound connections.
+                        type: boolean
+                      allowedHosts:
+                        description: AllowedHosts whitelist of allowed hosts.
+                        items:
+                          type: string
+                        type: array
+                      deniedHosts:
+                        description: DeniedHosts blacklist of denied hosts.
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - allowInbound
+                    - allowOutbound
+                    type: object
+                  resourceLimits:
+                    description: ResourceLimits sandbox resource limits.
+                    properties:
+                      cpu:
+                        description: CPU limit.
+                        type: string
+                      memory:
+                        description: Memory limit.
+                        type: string
+                      pids:
+                        description: PIDs limit.
+                        format: int32
+                        type: integer
+                    type: object
+                  templateRef:
+                    description: TemplateRef references a SandboxTemplate CRD.
+                    type: string
+                  timeout:
+                    description: Timeout execution timeout in seconds.
+                    format: int32
+                    type: integer
+                  type:
+                    description: Type identifies the sandbox type.
+                    enum:
+                    - gvisor
+                    - docker
+                    - kata
+                    - firecracker
+                    - custom
+                    type: string
+                  warmPoolRef:
+                    description: WarmPoolRef references a SandboxWarmPool CRD.
+                    type: string
+                required:
+                - mode
+                - type
+                type: object
+              security:
+                description: Security configuration for security policies.
+                properties:
+                  auditEnabled:
+                    description: AuditEnabled enables security audit logging.
+                    type: boolean
+                  auditLogPath:
+                    description: AuditLogPath path to audit log.
+                    type: string
+                  policies:
+                    description: Policies security policies.
+                    items:
+                      description: SecurityPolicy defines a security policy.
+                      properties:
+                        config:
+                          description: Config policy-specific configuration.
+                          x-kubernetes-preserve-unknown-fields: true
+                        name:
+                          description: Name is the policy identifier.
+                          type: string
+                        type:
+                          description: Type is the policy type.
+                          type: string
+                      required:
+                      - name
+                      - type
+                      type: object
+                    type: array
+                type: object
+              skills:
+                description: Skills configuration for skill modules.
+                properties:
+                  autoUpdate:
+                    description: AutoUpdate enables automatic skill updates.
+                    type: boolean
+                  endpoint:
+                    description: Endpoint is the skill hub endpoint.
+                    type: string
+                  hubType:
+                    description: HubType identifies the skill hub type.
+                    enum:
+                    - builtin
+                    - external
+                    - local
+                    type: string
+                  localPath:
+                    description: LocalPath path to local skills directory.
+                    type: string
+                  skills:
+                    description: Skills lists available skills.
+                    items:
+                      description: SkillConfig defines a skill configuration.
+                      properties:
+                        allowed:
+                          description: Allowed indicates if this skill is accessible.
+                          type: boolean
+                        config:
+                          description: Config skill-specific configuration.
+                          x-kubernetes-preserve-unknown-fields: true
+                        name:
+                          description: Name is the skill identifier.
+                          type: string
+                        version:
+                          description: Version is the skill version.
+                          type: string
+                      required:
+                      - allowed
+                      - name
+                      type: object
+                    type: array
+                required:
+                - hubType
+                type: object
+              state:
+                description: State configuration for runtime state management.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef references credentials.
+                    type: string
+                  endpoint:
+                    description: Endpoint is the state backend endpoint.
+                    type: string
+                  sessionTTL:
+                    description: SessionTTL session state TTL in seconds.
+                    format: int32
+                    type: integer
+                  type:
+                    description: Type identifies the state backend type.
+                    enum:
+                    - inmemory
+                    - redis
+                    - file
+                    type: string
+                required:
+                - type
+                type: object
               type:
-                type: string
+                description: Type identifies the harness capability type.
                 enum:
                 - model
                 - mcp
@@ -44,231 +553,89 @@ spec:
                 - security
                 - policy
                 - sandbox
-              model:
-                type: object
-                properties:
-                  provider:
-                    type: string
-                  endpoint:
-                    type: string
-                  apiKeyRef:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      key:
-                        type: string
-                  defaultModel:
-                    type: string
-                  models:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        allowed:
-                          type: boolean
-                        maxTokens:
-                          type: integer
-                        temperature:
-                          type: number
-                  rateLimit:
-                    type: object
-                    properties:
-                      requestsPerMinute:
-                        type: integer
-                      tokensPerMinute:
-                        type: integer
-              mcp:
-                type: object
-                properties:
-                  registryType:
-                    type: string
-                  endpoint:
-                    type: string
-                  apiKeyRef:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      key:
-                        type: string
-                  servers:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        type:
-                          type: string
-                        endpoint:
-                          type: string
-                        command:
-                          type: string
-                        args:
-                          type: array
-                          items:
-                            type: string
-                        allowed:
-                          type: boolean
-              skills:
-                type: object
-                properties:
-                  hubType:
-                    type: string
-                  endpoint:
-                    type: string
-                  apiKeyRef:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      key:
-                        type: string
-                  skills:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        version:
-                          type: string
-                        allowed:
-                          type: boolean
-                        path:
-                          type: string
-              knowledge:
-                type: object
-                properties:
-                  type:
-                    type: string
-                  endpoint:
-                    type: string
-                  collections:
-                    type: array
-                    items:
-                      type: string
-              memory:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                    - inmemory
-                    - redis
-                    - file
-                    - postgres
-                  endpoint:
-                    type: string
-                  ttl:
-                    type: integer
-                  persistenceEnabled:
-                    type: boolean
-              state:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                    - file
-                    - redis
-                    - database
-                  endpoint:
-                    type: string
-                  persistent:
-                    type: boolean
-              guardrail:
-                type: object
-                properties:
-                  rules:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        type:
-                          type: string
-                        config:
-                          type: object
-                          additionalProperties:
-                            type: string
-              security:
-                type: object
-                properties:
-                  policies:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        type:
-                          type: string
-                        config:
-                          type: object
-                          additionalProperties:
-                            type: string
-              policy:
-                type: object
-                properties:
-                  policies:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        type:
-                          type: string
-                        config:
-                          type: object
-                          additionalProperties:
-                            type: string
-              sandbox:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                    - gvisor
-                    - firecracker
-                    - container
-                  mode:
-                    type: string
-                    enum:
-                    - embedded
-                    - external
-                  endpoint:
-                    type: string
-                  timeout:
-                    type: integer
-                  resources:
-                    type: object
-                    properties:
-                      cpu:
-                        type: string
-                      memory:
-                        type: string
-          status:
-            type: object
-            properties:
-              phase:
                 type: string
-                enum:
-                - Pending
-                - Initializing
-                - Available
-                - Error
+            required:
+            - type
+            type: object
+          status:
+            description: HarnessStatus defines the observed state of Harness.
+            properties:
+              conditions:
+                description: Conditions represent the latest observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
               connectionStatus:
+                description: ConnectionStatus connection to the underlying service.
                 type: string
               lastSyncTime:
-                type: string
+                description: LastSyncTime when the harness was last synchronized.
                 format: date-time
-              message:
                 type: string
+              phase:
+                description: Phase indicates the current state.
+                enum:
+                - Available
+                - Unavailable
+                - Error
+                type: string
+            required:
+            - phase
+            type: object
+        type: object
+    served: true
+    storage: true
     subresources:
       status: {}

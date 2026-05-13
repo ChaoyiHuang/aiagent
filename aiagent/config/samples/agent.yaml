@@ -31,6 +31,13 @@ spec:
   description: "Sample AI Agent using ADK-Go framework"
 ---
 # Sample AIAgent using OpenClaw framework
+# agentConfig schema (updated):
+#   - gateway: Gateway instance settings (port, bind, auth)
+#   - agents: Internal sub-agents (invisible to Kubernetes)
+#   - overrides: Override inherited Harness capabilities
+#
+# NOTE: Model and Skills come from Harness CRDs (referenced by AgentRuntime)
+#       They should NOT be defined in agentConfig
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
@@ -40,23 +47,91 @@ spec:
   runtimeRef:
     name: openclaw-runtime-sample
     type: openclaw
-  # AgentConfig contains OpenClaw-specific configuration
-  # OpenClaw Handler will read this and start Gateway with internal agents
+  # AgentConfig contains OpenClaw-specific configuration (JSON format)
+  # OpenClaw Handler will parse this and start Gateway accordingly
   agentConfig:
+    # Gateway process settings for this AIAgent instance
     gateway:
-      port: 18789
-      host: "0.0.0.0"
+      port: 18789                # Gateway HTTP port
+      bind: "loopback"           # Bind mode: loopback, lan, auto
+      auth:
+        mode: "none"             # Auth mode: none, token, password
+    # Internal sub-agents managed by Gateway (invisible to Kubernetes)
+    # Each Gateway can manage multiple internal agents
     agents:
-    - name: weather
-      description: "Weather information agent"
-      model: "deepseek-chat"
-    - name: calculator
-      description: "Math calculation agent"
-      model: "deepseek-chat"
+      defaults:
+        model: "deepseek-chat"   # Override inherited model for sub-agents
+        thinkingDefault: "medium"
+      list:
+      - id: "weather"
+        name: "Weather Agent"
+        skills: ["weather"]
+        identity:
+          name: "Weather Assistant"
+          avatar: "🌤️"
+      - id: "calculator"
+        name: "Calculator Agent"
+        skills: ["calculator"]
+        identity:
+          name: "Calculator"
+          avatar: "🔢"
+      - id: "assistant"
+        name: "General Assistant"
+        # Uses default model from above
+    # Override inherited Harness capabilities (cannot add new, only restrict)
+    overrides:
+      allowedSkills: ["weather", "calculator", "assistant"]
+      deniedSkills: ["code-execution"]
   volumePolicy: retain
   description: "Sample AI Agent using OpenClaw framework"
 ---
-# Sample AIAgent with minimal configuration
+# Sample AIAgent with minimal configuration (OpenClaw)
+# No internal agents defined - uses Gateway defaults
+apiVersion: agent.ai/v1
+kind: AIAgent
+metadata:
+  name: openclaw-simple-agent
+  namespace: default
+spec:
+  runtimeRef:
+    type: openclaw  # Type-based auto scheduling
+  # Minimal agentConfig - just Gateway settings
+  agentConfig:
+    gateway:
+      port: 18790
+      bind: "loopback"
+  description: "Simple OpenClaw Agent with minimal config"
+---
+# Sample AIAgent with External Sandbox (OpenClaw)
+# Sandbox configuration comes from Harness CR (not in agentConfig)
+# Handler generates harness-bridge plugin for tool interception
+apiVersion: agent.ai/v1
+kind: AIAgent
+metadata:
+  name: openclaw-external-sandbox-agent
+  namespace: default
+spec:
+  runtimeRef:
+    name: openclaw-external-sandbox-runtime
+    type: openclaw
+  agentConfig:
+    gateway:
+      port: 18791
+      bind: "loopback"
+    agents:
+      list:
+      - id: "code-agent"
+        name: "Code Agent"
+        skills: ["code-execution"]
+        tools:
+          allow: ["read", "write", "edit", "exec"]
+          deny: ["process"]
+    # Tools needing isolation will be intercepted by harness-bridge plugin
+    # and routed to External Sandbox HTTP API
+    # Non-isolated tools (memory, sessions, web) remain Gateway local
+  description: "OpenClaw Agent using External Sandbox for tool isolation"
+---
+# Sample AIAgent with minimal configuration (ADK)
 apiVersion: agent.ai/v1
 kind: AIAgent
 metadata:
