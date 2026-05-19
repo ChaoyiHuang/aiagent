@@ -11,11 +11,13 @@
 // │    - Write to /var/lib/aiagent/configs/<namespace>/<name>/      │
 // │    - Create agent-config.json (from spec.agentConfig)           │
 // │    - Create agent-meta.yaml (name, namespace, phase, etc.)      │
-// │  - Maintains agent-index.yaml with all agents in namespace      │
+// │  - Maintains agent-index.yaml PER RUNTIME (not per namespace)   │
+// │    - Path: /var/lib/aiagent/configs/<ns>/<runtime>/agent-index.yaml │
 // │                                                                 │
 // │  AgentRuntime Pod                                               │
-// │  - Mounts hostPath as /etc/agent-config                         │
-// │  - Handler reads configs directly from files                    │
+// │  - Mounts hostPath for SPECIFIC RUNTIME                         │
+// │  - Path: /var/lib/aiagent/configs/<ns>/<runtime>                │
+// │  - Handler reads agent-index.yaml with ONLY its agents          │
 // │  - No K8s API calls needed                                      │
 // └─────────────────────────────────────────────────────────────────┘
 package main
@@ -68,7 +70,7 @@ const (
 var aiAgentGVR = schema.GroupVersionResource{
 	Group:    "agent.ai",
 	Version:  "v1",
-	Resource: "aigents",
+	Resource: "aiagents",
 }
 
 // AgentMeta contains metadata about an agent for the handler.
@@ -278,6 +280,20 @@ func (d *ConfigDaemon) onAgentUpdate(oldObj, newObj interface{}) {
 	key := d.agentKey(newAgent)
 	d.agentTracker[key] = newAgent
 
+	// Handle runtime binding changes: need to clean up old runtime and update both indexes
+	if oldAgent.RuntimeName != newAgent.RuntimeName && oldAgent.RuntimeName != "" {
+		// Remove config from old runtime directory
+		oldAgentDir := filepath.Join(d.configBase, oldAgent.Namespace, oldAgent.RuntimeName, oldAgent.Name)
+		if err := os.RemoveAll(oldAgentDir); err != nil {
+			log.Printf("Error removing old agent config directory %s: %v", oldAgentDir, err)
+		}
+		// Update old runtime index
+		d.updateRuntimeIndex(oldAgent.Namespace, oldAgent.RuntimeName)
+		if *debug {
+			log.Printf("Agent moved from runtime %s to %s: %s/%s", oldAgent.RuntimeName, newAgent.RuntimeName, newAgent.Namespace, newAgent.Name)
+		}
+	}
+
 	// Check if relevant fields changed
 	if d.shouldUpdateConfig(oldAgent, newAgent) {
 		if *debug {
@@ -289,7 +305,7 @@ func (d *ConfigDaemon) onAgentUpdate(oldObj, newObj interface{}) {
 
 	// Always update agent index on phase changes
 	if oldAgent.Phase != newAgent.Phase {
-		d.updateNamespaceIndex(newAgent.Namespace)
+		d.updateRuntimeIndex(newAgent.Namespace, newAgent.RuntimeName)
 	}
 }
 
@@ -316,11 +332,8 @@ func (d *ConfigDaemon) onAgentDelete(obj interface{}) {
 		log.Printf("Agent deleted: %s/%s", agent.Namespace, agent.Name)
 	}
 
-	// Remove config files
+	// Remove config files (also updates runtime index)
 	d.deleteAgentConfig(agent)
-
-	// Update namespace index
-	d.updateNamespaceIndex(agent.Namespace)
 }
 
 // parseAgentInfo extracts AgentInfo from unstructured object.
@@ -436,24 +449,40 @@ func (d *ConfigDaemon) compareJSON(a, b *apiextensionsv1.JSON) bool {
 }
 
 // syncAgentConfig writes agent config files to hostPath.
+// Directory structure: /var/lib/aiagent/configs/<namespace>/<runtime-name>/<agent-name>/agent-config.json
+// This ensures Handler mounting runtime-specific directory can find agent configs.
+// IMPORTANT: Resolves tokenSecretRef to actual token values from Secrets.
 func (d *ConfigDaemon) syncAgentConfig(agent *AgentInfo) {
-	// Create agent config directory
-	agentDir := filepath.Join(d.configBase, agent.Namespace, agent.Name)
+	// Skip agents without runtime binding
+	if agent.RuntimeName == "" {
+		if *debug {
+			log.Printf("Skipping sync for agent %s with no runtime binding", agent.Name)
+		}
+		return
+	}
+
+	// Create agent config directory inside runtime directory
+	// Path: /var/lib/aiagent/configs/<namespace>/<runtime-name>/<agent-name>/
+	agentDir := filepath.Join(d.configBase, agent.Namespace, agent.RuntimeName, agent.Name)
 	if err := os.MkdirAll(agentDir, 0755); err != nil {
 		log.Printf("Error creating agent config directory %s: %v", agentDir, err)
 		return
 	}
 
 	// Write agent-config.json (from spec.agentConfig)
+	// Resolve any tokenSecretRef to actual token values
 	if agent.AgentConfig != nil && len(agent.AgentConfig.Raw) > 0 {
 		configPath := filepath.Join(agentDir, AgentConfigFile)
-		// Validate JSON and write
+		// Validate JSON and process secret references
 		var jsonData interface{}
 		if err := json.Unmarshal(agent.AgentConfig.Raw, &jsonData); err != nil {
 			log.Printf("Error parsing agentConfig JSON for %s: %v", d.agentKey(agent), err)
 			// Write raw data anyway for debugging
 			os.WriteFile(configPath, agent.AgentConfig.Raw, 0644)
 		} else {
+			// Resolve all tokenSecretRef references recursively (framework-agnostic)
+			jsonData = d.resolveTokenSecretRefs(jsonData, agent.Namespace)
+
 			// Pretty-print JSON
 			prettyJSON, _ := json.MarshalIndent(jsonData, "", "  ")
 			if err := os.WriteFile(configPath, prettyJSON, 0644); err != nil {
@@ -484,28 +513,38 @@ func (d *ConfigDaemon) syncAgentConfig(agent *AgentInfo) {
 		log.Printf("Wrote agent meta for %s to %s", d.agentKey(agent), metaPath)
 	}
 
-	// Update namespace index
-	d.updateNamespaceIndex(agent.Namespace)
+	// Update runtime index for this specific runtime
+	d.updateRuntimeIndex(agent.Namespace, agent.RuntimeName)
 }
 
-// deleteAgentConfig removes agent config files.
+// deleteAgentConfig removes agent config files from runtime directory.
 func (d *ConfigDaemon) deleteAgentConfig(agent *AgentInfo) {
-	agentDir := filepath.Join(d.configBase, agent.Namespace, agent.Name)
+	// Skip if no runtime binding
+	if agent.RuntimeName == "" {
+		return
+	}
+
+	// Remove from runtime-specific directory
+	agentDir := filepath.Join(d.configBase, agent.Namespace, agent.RuntimeName, agent.Name)
 	if err := os.RemoveAll(agentDir); err != nil {
 		log.Printf("Error removing agent config directory %s: %v", agentDir, err)
 	}
+
+	// Update runtime index for this specific runtime
+	d.updateRuntimeIndex(agent.Namespace, agent.RuntimeName)
 }
 
-// updateNamespaceIndex writes the agent index for the namespace.
-func (d *ConfigDaemon) updateNamespaceIndex(namespace string) {
-	// Collect all agents in this namespace
+// updateRuntimeIndex writes agent-index.yaml for a specific runtime.
+// Path: /var/lib/aiagent/configs/<namespace>/<runtime-name>/agent-index.yaml
+func (d *ConfigDaemon) updateRuntimeIndex(namespace string, runtimeName string) {
+	// Collect all agents for this specific runtime
 	entries := []AgentIndexEntry{}
 	for _, agent := range d.agentTracker {
-		if agent.Namespace != namespace {
+		if agent.Namespace != namespace || agent.RuntimeName != runtimeName {
 			continue
 		}
-		// Only include agents in Running, Pending, or Scheduling phase
-		if agent.Phase != "Running" && agent.Phase != "Pending" && agent.Phase != "Scheduling" {
+		// Only include agents in Running, Pending, Scheduling, or Migrating phase
+		if agent.Phase != "Running" && agent.Phase != "Pending" && agent.Phase != "Scheduling" && agent.Phase != "Migrating" {
 			continue
 		}
 		entries = append(entries, AgentIndexEntry{
@@ -517,26 +556,148 @@ func (d *ConfigDaemon) updateNamespaceIndex(namespace string) {
 		})
 	}
 
-	// Create index
-	index := AgentIndex{Agents: entries}
-	indexData, err := yaml.Marshal(index)
-	if err != nil {
-		log.Printf("Error marshaling agent index for namespace %s: %v", namespace, err)
+	// Create runtime directory
+	runtimeDir := filepath.Join(d.configBase, namespace, runtimeName)
+	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+		log.Printf("Error creating runtime directory %s: %v", runtimeDir, err)
 		return
 	}
 
-	// Write to namespace directory
+	// Write agent-index.yaml for this runtime
+	index := AgentIndex{Agents: entries}
+	indexData, err := yaml.Marshal(index)
+	if err != nil {
+		log.Printf("Error marshaling agent index for runtime %s/%s: %v", namespace, runtimeName, err)
+		return
+	}
+
+	indexPath := filepath.Join(runtimeDir, AgentIndexFile)
+	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+		log.Printf("Error writing agent index for runtime %s/%s: %v", namespace, runtimeName, err)
+	} else if *debug {
+		log.Printf("Updated agent index for runtime %s/%s (%d agents)", namespace, runtimeName, len(entries))
+	}
+}
+
+// updateAllRuntimeIndexesInNamespace writes agent-index.yaml for ALL runtimes in a namespace.
+// This is useful for initial setup or when we need to refresh all runtime indexes.
+// For incremental updates, use updateRuntimeIndex() instead.
+func (d *ConfigDaemon) updateAllRuntimeIndexesInNamespace(namespace string) {
+	// Group agents by runtime within this namespace
+	runtimeAgents := make(map[string][]AgentIndexEntry)
+
+	for _, agent := range d.agentTracker {
+		if agent.Namespace != namespace {
+			continue
+		}
+		// Only include agents in Running, Pending, Scheduling, or Migrating phase
+		// Migrating agents should still be processed by handler during pod restarts
+		if agent.Phase != "Running" && agent.Phase != "Pending" && agent.Phase != "Scheduling" && agent.Phase != "Migrating" {
+			continue
+		}
+
+		// Skip agents without runtime binding
+		if agent.RuntimeName == "" {
+			if *debug {
+				log.Printf("Skipping agent %s with no runtime binding", agent.Name)
+			}
+			continue
+		}
+
+		runtimeAgents[agent.RuntimeName] = append(runtimeAgents[agent.RuntimeName], AgentIndexEntry{
+			Name:      agent.Name,
+			Namespace: agent.Namespace,
+			Phase:     agent.Phase,
+			Runtime:   agent.RuntimeName,
+			UID:       string(agent.UID),
+		})
+	}
+
+	// Write agent-index.yaml for each runtime
 	nsDir := filepath.Join(d.configBase, namespace)
 	if err := os.MkdirAll(nsDir, 0755); err != nil {
 		log.Printf("Error creating namespace directory %s: %v", nsDir, err)
 		return
 	}
 
-	indexPath := filepath.Join(nsDir, AgentIndexFile)
-	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
-		log.Printf("Error writing agent index for namespace %s: %v", namespace, err)
+	for runtimeName, entries := range runtimeAgents {
+		// Create runtime directory
+		runtimeDir := filepath.Join(nsDir, runtimeName)
+		if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+			log.Printf("Error creating runtime directory %s: %v", runtimeDir, err)
+			continue
+		}
+
+		// Create index for this runtime
+		index := AgentIndex{Agents: entries}
+		indexData, err := yaml.Marshal(index)
+		if err != nil {
+			log.Printf("Error marshaling agent index for runtime %s/%s: %v", namespace, runtimeName, err)
+			continue
+		}
+
+		indexPath := filepath.Join(runtimeDir, AgentIndexFile)
+		if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+			log.Printf("Error writing agent index for runtime %s/%s: %v", namespace, runtimeName, err)
+		} else if *debug {
+			log.Printf("Updated agent index for runtime %s/%s (%d agents)", namespace, runtimeName, len(entries))
+		}
+	}
+
+	// Also write a namespace-level index for debugging/listing purposes
+	// This is NOT used by Handler, but useful for admin to see all agents
+	allEntries := []AgentIndexEntry{}
+	for _, entries := range runtimeAgents {
+		allEntries = append(allEntries, entries...)
+	}
+	allIndex := AgentIndex{Agents: allEntries}
+	allIndexData, err := yaml.Marshal(allIndex)
+	if err != nil {
+		log.Printf("Error marshaling full namespace index: %v", err)
+		return
+	}
+	allIndexPath := filepath.Join(nsDir, "all-agents.yaml")
+	if err := os.WriteFile(allIndexPath, allIndexData, 0644); err != nil {
+		log.Printf("Error writing full namespace index: %v", err)
 	} else if *debug {
-		log.Printf("Updated agent index for namespace %s (%d agents)", namespace, len(entries))
+		log.Printf("Updated full namespace index at %s (%d agents)", allIndexPath, len(allEntries))
+	}
+}
+
+// resolveTokenSecretRefs recursively walks the JSON tree and resolves any tokenSecretRef
+// fields to actual token values from K8s Secrets. This is fully framework-agnostic —
+// it finds tokenSecretRef at ANY path (channels.discord, channels.telegram, or any
+// future framework-specific path) without understanding the semantics.
+func (d *ConfigDaemon) resolveTokenSecretRefs(data interface{}, namespace string) interface{} {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// If this map has a tokenSecretRef, resolve it to the actual token
+		if ref, ok := v["tokenSecretRef"].(string); ok && ref != "" {
+			secret, err := d.k8sClient.CoreV1().Secrets(namespace).Get(context.TODO(), ref, metav1.GetOptions{})
+			if err != nil {
+				log.Printf("Error reading secret %s for tokenSecretRef: %v", ref, err)
+			} else if tokenValue, ok := secret.Data["token"]; ok {
+				v["token"] = string(tokenValue)
+				delete(v, "tokenSecretRef")
+				if *debug {
+					log.Printf("Resolved tokenSecretRef %s", ref)
+				}
+			} else {
+				log.Printf("Secret %s does not have 'token' key", ref)
+			}
+		}
+		// Recursively process all values
+		for key, val := range v {
+			v[key] = d.resolveTokenSecretRefs(val, namespace)
+		}
+		return v
+	case []interface{}:
+		for i, val := range v {
+			v[i] = d.resolveTokenSecretRefs(val, namespace)
+		}
+		return v
+	default:
+		return data
 	}
 }
 

@@ -6,8 +6,10 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"aiagent/api/v1"
+	v1 "aiagent/api/v1"
 )
 
 const (
@@ -249,112 +251,79 @@ func (r *AgentRuntimeReconciler) resolveHarnessReferences(ctx context.Context, r
 }
 
 // generateHarnessConfigData generates ConfigMap data from Harness spec.
+// Stores raw spec as JSON to keep Controller framework-agnostic.
+// Handler parses the JSON and converts to framework-specific format.
 func (r *AgentRuntimeReconciler) generateHarnessConfigData(harness *v1.Harness) map[string]string {
 	data := map[string]string{}
 
-	switch harness.Spec.Type {
-	case v1.HarnessTypeModel:
-		if harness.Spec.Model != nil {
-			data["model.yaml"] = r.generateModelConfig(harness.Spec.Model)
-		}
-	case v1.HarnessTypeMCP:
-		if harness.Spec.MCP != nil {
-			data["mcp.yaml"] = r.generateMCPConfig(harness.Spec.MCP)
-		}
-	case v1.HarnessTypeMemory:
-		if harness.Spec.Memory != nil {
-			data["memory.yaml"] = r.generateMemoryConfig(harness.Spec.Memory)
-		}
-	case v1.HarnessTypeSandbox:
-		if harness.Spec.Sandbox != nil {
-			data["sandbox.yaml"] = r.generateSandboxConfig(harness.Spec.Sandbox)
-		}
-	case v1.HarnessTypeSkills:
-		if harness.Spec.Skills != nil {
-			data["skills.yaml"] = r.generateSkillsConfig(harness.Spec.Skills)
-		}
-	}
-
+	// Store harness metadata
 	data["harness-name"] = harness.Name
 	data["harness-type"] = string(harness.Spec.Type)
+
+	// Serialize entire Harness Spec as JSON (framework-agnostic)
+	// Handler will parse this and convert to framework-specific config
+	specJSON, err := json.Marshal(harness.Spec)
+	if err != nil {
+		log.Log.Error(err, "failed to marshal Harness spec", "harness", harness.Name)
+		return data
+	}
+	data["harness.json"] = string(specJSON)
 
 	return data
 }
 
-// generateModelConfig generates YAML config for Model Harness.
-func (r *AgentRuntimeReconciler) generateModelConfig(spec *v1.ModelHarnessSpec) string {
-	return fmt.Sprintf(`
-provider: %s
-endpoint: %s
-defaultModel: %s
-models:
-%s
-`, spec.Provider, spec.Endpoint, spec.DefaultModel, r.generateModelList(spec.Models))
-}
+// collectHarnessEnvVars collects environment variables from Model Harness for API key injection.
+// Convention: PROVIDER_API_KEY (uppercase, e.g., DEEPSEEK_API_KEY) from authSecretRef.
+// Channel secrets (DISCORD_BOT_TOKEN etc.) are NOT injected here — they are resolved
+// by ConfigDaemon into agent-config.json on hostPath, and the OpenClaw handler extracts
+// them as subprocess env vars when starting Gateway instances.
+func (r *AgentRuntimeReconciler) collectHarnessEnvVars(ctx context.Context, runtime *v1.AgentRuntime) []corev1.EnvVar {
+	log := log.FromContext(ctx)
+	envVars := []corev1.EnvVar{}
 
-func (r *AgentRuntimeReconciler) generateModelList(models []v1.ModelConfig) string {
-	result := ""
-	for _, m := range models {
-		result += fmt.Sprintf("  - name: %s\n    allowed: %v\n", m.Name, m.Allowed)
+	// Collect from Harness (Model API keys) - this is framework-agnostic
+	for _, ref := range runtime.Spec.Harness {
+		ns := ref.Namespace
+		if ns == "" {
+			ns = runtime.Namespace
+		}
+
+		harness := &v1.Harness{}
+		if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, harness); err != nil {
+			continue // Skip if harness not found (will be caught in resolveHarnessReferences)
+		}
+
+		// Only Model Harness has authSecretRef - generic handling
+		if harness.Spec.Type == v1.HarnessTypeModel && harness.Spec.Model != nil {
+			if harness.Spec.Model.AuthSecretRef != "" {
+				provider := harness.Spec.Model.Provider
+				// Use uppercase for environment variable convention (e.g., DEEPSEEK_API_KEY)
+				envVarName := fmt.Sprintf("%s_API_KEY", strings.ToUpper(provider))
+				envVars = append(envVars, corev1.EnvVar{
+					Name: envVarName,
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: harness.Spec.Model.AuthSecretRef,
+							},
+							Key: "api-key",
+						},
+					},
+				})
+				log.Info("Injecting API key env var from Harness", "envVar", envVarName, "secret", harness.Spec.Model.AuthSecretRef)
+			}
+		}
 	}
-	return result
-}
 
-func (r *AgentRuntimeReconciler) generateMCPConfig(spec *v1.MCPHarnessSpec) string {
-	return fmt.Sprintf(`
-registryType: %s
-endpoint: %s
-servers:
-%s
-`, spec.RegistryType, spec.Endpoint, r.generateServerList(spec.Servers))
-}
-
-func (r *AgentRuntimeReconciler) generateServerList(servers []v1.MCPServerConfig) string {
-	result := ""
-	for _, s := range servers {
-		result += fmt.Sprintf("  - name: %s\n    type: %s\n    allowed: %v\n", s.Name, s.Type, s.Allowed)
-	}
-	return result
-}
-
-func (r *AgentRuntimeReconciler) generateMemoryConfig(spec *v1.MemoryHarnessSpec) string {
-	return fmt.Sprintf(`
-type: %s
-endpoint: %s
-ttl: %d
-persistenceEnabled: %v
-`, spec.Type, spec.Endpoint, spec.TTL, spec.PersistenceEnabled)
-}
-
-func (r *AgentRuntimeReconciler) generateSandboxConfig(spec *v1.SandboxHarnessSpec) string {
-	return fmt.Sprintf(`
-type: %s
-mode: %s
-endpoint: %s
-timeout: %d
-`, spec.Type, string(spec.Mode), spec.Endpoint, spec.Timeout)
-}
-
-func (r *AgentRuntimeReconciler) generateSkillsConfig(spec *v1.SkillsHarnessSpec) string {
-	return fmt.Sprintf(`
-hubType: %s
-endpoint: %s
-skills:
-%s
-`, spec.HubType, spec.Endpoint, r.generateSkillList(spec.Skills))
-}
-
-func (r *AgentRuntimeReconciler) generateSkillList(skills []v1.SkillConfig) string {
-	result := ""
-	for _, s := range skills {
-		result += fmt.Sprintf("  - name: %s\n    version: %s\n    allowed: %v\n", s.Name, s.Version, s.Allowed)
-	}
-	return result
+	return envVars
 }
 
 // createOrUpdatePod creates or updates the AgentRuntime Pod.
 func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime *v1.AgentRuntime) (*corev1.Pod, error) {
 	log := log.FromContext(ctx)
+
+	// Collect environment variables from Model Harness (for API key injection)
+	harnessEnvVars := r.collectHarnessEnvVars(ctx, runtime)
 
 	podName := runtime.Name + "-runtime"
 	pod := &corev1.Pod{
@@ -367,7 +336,7 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 				"agent.ai/framework":    runtime.Spec.AgentFramework.Type,
 			},
 		},
-		Spec: r.buildPodSpec(runtime),
+		Spec: r.buildPodSpec(runtime, harnessEnvVars),
 	}
 
 	if err := controllerutil.SetControllerReference(runtime, pod, r.Scheme); err != nil {
@@ -439,8 +408,9 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // │  │   /etc/harness/<name> -> Harness ConfigMaps                ││
 // │  │   /shared/workdir -> EmptyDir (agent workspace)            ││
 // │  │   /shared/config -> EmptyDir (runtime configs)             ││
-// │  │   /etc/agent-config -> hostPath (from Config Daemon)       ││
-// │  │   /etc/agent-config/<agent-name>/agent-config.json     ││
+// │  │   /etc/agent-config -> hostPath (Config Daemon per-runtime)││
+// │  │       /etc/agent-config/agent-index.yaml (ONLY this runtime's agents) ││
+// │  │       /etc/agent-config/<agent-name>/agent-config.json     ││
 // │  └────────────────────────────────────────────────────────────┘│
 // │                                                                 │
 // │  Framework Container (dummy - provides image content only)     │
@@ -454,15 +424,15 @@ func (r *AgentRuntimeReconciler) createOrUpdatePod(ctx context.Context, runtime 
 // │  Config Daemon (DaemonSet on same node)                        │
 // │  ┌────────────────────────────────────────────────────────────┐│
 // │  │ - Watches AIAgent CRDs via Informer                        ││
-// │  │ - Writes AgentConfig to hostPath                       ││
-// │  │ - /var/lib/aiagent/configs/<namespace>/<name>/             ││
-// │  │ - Creates agent-config.json + agent-meta.yaml          ││
+// │  │ - Writes AgentConfig to hostPath (PER RUNTIME)             ││
+// │  │ - /var/lib/aiagent/configs/<ns>/<runtime>/agent-index.yaml ││
+// │  │ - Creates agent-config.json + agent-meta.yaml              ││
 // │  └────────────────────────────────────────────────────────────┘│
 // │                                                                 │
 // │  ShareProcessNamespace: true (Handler can see/ctrl Framework) │
 // │  ShareNetworkNamespace: true (implicit in Pod)                 │
 // └─────────────────────────────────────────────────────────────────┘
-func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.PodSpec {
+func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime, harnessEnvVars []corev1.EnvVar) corev1.PodSpec {
 	// Build volumes for Harness ConfigMaps
 	volumes := []corev1.Volume{}
 	handlerVolumeMounts := []corev1.VolumeMount{}
@@ -488,13 +458,15 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 	// hostPath volume for agent configs (written by Config Daemon)
 	// Config Daemon watches AIAgent CRDs and syncs AgentConfig to this path
 	// Handler reads configs directly without K8s API calls
-	// Path structure: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json
+	// IMPORTANT: Mount is PER RUNTIME (not per namespace)
+	// Path structure: /var/lib/aiagent/configs/<namespace>/<runtime-name>/agent-index.yaml
+	// This ensures Handler only sees agents belonging to its specific AgentRuntime
 	hostPathType := corev1.HostPathDirectoryOrCreate
 	agentConfigHostPath := corev1.Volume{
 		Name: "agent-configs",
 		VolumeSource: corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
-				Path: AgentConfigHostPath + "/" + runtime.Namespace,
+				Path: AgentConfigHostPath + "/" + runtime.Namespace + "/" + runtime.Name,
 				Type: &hostPathType,
 			},
 		},
@@ -562,6 +534,9 @@ func (r *AgentRuntimeReconciler) buildPodSpec(runtime *v1.AgentRuntime) corev1.P
 		Name:  "NAMESPACE",
 		Value: runtime.Namespace,
 	})
+
+	// Add Harness environment variables (API keys from Model Harness)
+	handlerContainer.Env = append(handlerContainer.Env, harnessEnvVars...)
 
 	// Build Framework container as DUMMY container (pause process only)
 	// It provides the image content for ImageVolume, but does not run Framework processes

@@ -2,35 +2,62 @@
 # ImageVolume pattern: This container provides image content ONLY.
 # Handler Container is the process manager that starts/stops Framework processes.
 #
-# Architecture:
+# Architecture (OpenClaw 2026 Environment Variables):
 # ┌─────────────────────────────────────────────────────────────────┐
 # │ Pod (AgentRuntime)                                              │
 # │                                                                 │
 # │  Handler Container mounts this image at /framework-rootfs       │
 # │  Handler starts: /framework-rootfs/usr/local/bin/openclaw       │
 # │                                                                 │
-# │  This Container: ENTRYPOINT pause (just sleeps forever)         │
-# │  Provides: Node.js runtime + OpenClaw CLI binaries              │
+# │  Runtime Environment Variables (set by Handler):                │
+# │    OPENCLAW_STATE_DIR=/shared/workdir                           │
+# │    OPENCLAW_CONFIG_PATH=/shared/workdir/openclaw-config/...json │
+# │                                                                 │
+# │  Build-time: OPENCLAW_STATE_DIR=/openclaw-state                 │
+# │  Plugin registry uses absolute paths relative to STATE_DIR      │
+# │  Runtime: Copy /openclaw-state/* to /shared/workdir             │
+# │  Registry paths will match because STATE_DIR points to copy     │
 # └─────────────────────────────────────────────────────────────────┘
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Install OpenClaw v2026.3.8 via npm (provides binaries for Handler to use)
-RUN npm install -g openclaw@2026.5.7
+# Install OpenClaw v2026.5.12 via npm (provides binaries for Handler to use)
+RUN npm install -g openclaw@2026.5.12
+
+# ============================================================
+# OpenClaw 2026 Architecture: OPENCLAW_STATE_DIR for Plugins
+# ============================================================
+# Set OPENCLAW_STATE_DIR at build time - this is where plugins are installed
+# Runtime will copy this directory to a writable location and use same env var
+
+ENV OPENCLAW_STATE_DIR=/openclaw-state
+
+# Create the state directory structure
+RUN mkdir -p /openclaw-state && chmod 755 /openclaw-state
+
+# Install Discord plugin - will be installed in /openclaw-state/npm/node_modules/@openclaw/discord
+# Registry (installs.json) will have paths like /openclaw-state/npm/node_modules/@openclaw/discord
+RUN openclaw plugins install @openclaw/discord@2026.5.12 && \
+    openclaw plugins enable discord
+
+# Make all files accessible to non-root users (handler runs as node user)
+RUN chmod -R 755 /openclaw-state
+
+# ============================================================
+# Additional setup
+# ============================================================
 
 # Create pause script (minimal sleep process)
 RUN echo '#!/bin/sh' > /pause && \
     echo 'while true; do sleep 365d; done' >> /pause && \
     chmod +x /pause
 
-# Create directories (Handler will use these via ImageVolume)
+# Create shared directories (for reference, actual mounts come from Pod spec)
 RUN mkdir -p /shared/workdir /shared/config && \
-    mkdir -p /etc/agent-config && \
-    mkdir -p /root/.openclaw/agents
+    mkdir -p /etc/agent-config
 
 # Default environment (for Handler's reference)
-ENV OPENCLAW_CONFIG_DIR=/shared/config
 ENV WORK_DIR=/shared/workdir
 
 # DUMMY entrypoint - just sleep forever

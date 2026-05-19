@@ -1,7 +1,7 @@
 # Dockerfile for Config Daemon
 # Config Daemon watches AIAgent CRDs and syncs AgentConfig to hostPath
 # NOTE: Must run as root to write to hostPath directories
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install git for cloning adk-go
 RUN apk add --no-cache git
@@ -20,10 +20,13 @@ RUN sed -i 's|replace google.golang.org/adk => ../adk-go|replace google.golang.o
 # Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy source code first (needed for go mod tidy)
 COPY api/ api/
 COPY pkg/ pkg/
 COPY cmd/ cmd/
+
+# Fix missing go.sum entries
+RUN go mod tidy
 
 # Build config-daemon binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o config-daemon ./cmd/config-daemon

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -232,7 +233,9 @@ func (h *OpenClawHandler) StartFramework(ctx context.Context, frameworkBin strin
 //   --port    from agentConfig.gateway.port (or basePort + instanceIndex)
 //   --bind    from agentConfig.gateway.bind (default: loopback)
 //   --auth    from agentConfig.gateway.auth.mode (default: none)
-func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID string, configPath string) error {
+// extraEnv provides additional environment variables (e.g., DISCORD_BOT_TOKEN)
+// extracted by the caller from ConfigDaemon-resolved agent-config.json.
+func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID string, configPath string, extraEnv ...string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -251,8 +254,44 @@ func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID
 		port = savedPort
 	}
 
+	// Create per-instance subdirectory structure to isolate each Gateway's data
+	instanceDir := filepath.Join(h.workDir, instanceID)
+	instanceConfigDir := filepath.Join(instanceDir, "config")
+	instanceWorkspaceDir := filepath.Join(instanceDir, "workspace")
+	instanceStateDir := filepath.Join(instanceDir, "state")
+
+	for _, dir := range []string{instanceConfigDir, instanceWorkspaceDir, instanceStateDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create instance directory %s: %w", dir, err)
+		}
+	}
+
+	// Initialize state directory with plugins from cache or ImageVolume
+	if err := h.initializeInstanceState(instanceStateDir); err != nil {
+		return fmt.Errorf("failed to initialize instance state: %w", err)
+	}
+
+	// Copy config to instance config dir and state dir for Gateway discovery
+	// Config dir: reference copy for debugging
+	// State dir: overwrite build-time openclaw.json so Gateway gets full config
+	if configPath != "" {
+		instanceConfigPath := filepath.Join(instanceConfigDir, "openclaw.json")
+		configData, err := os.ReadFile(configPath)
+		if err == nil {
+			if err := os.WriteFile(instanceConfigPath, configData, 0644); err != nil {
+				return fmt.Errorf("failed to copy config to instance dir: %w", err)
+			}
+			// Also write to state dir so Gateway reads models/channels config at startup
+			stateConfigPath := filepath.Join(instanceStateDir, "openclaw.json")
+			if err := os.WriteFile(stateConfigPath, configData, 0644); err != nil {
+				return fmt.Errorf("failed to copy config to state dir: %w", err)
+			}
+		}
+	}
+
 	// Prepare command
 	// Gateway command: openclaw gateway --allow-unconfigured --port <port>
+	// For OpenClaw v2026.5.7: Use OPENCLAW_CONFIG_DIR env instead of --config flag
 	args := []string{
 		"gateway",
 		"--allow-unconfigured",
@@ -260,17 +299,22 @@ func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID
 		"--port", fmt.Sprintf("%d", port),
 		"--auth", "none",
 		"--force",
-		"--config", configPath,
 	}
 
 	cmd := exec.CommandContext(ctx, h.frameworkBin, args...)
 	cmd.Dir = h.workDir
 
-	// Set environment
+	// Set per-instance environment variables for OpenClaw v2026.5.12 Architecture
+	// Each Gateway instance gets isolated subdirectories so data never mixes:
+	//   OPENCLAW_CONFIG_DIR    → <workDir>/<instanceID>/config/   (openclaw.json)
+	//   OPENCLAW_WORKSPACE_DIR → <workDir>/<instanceID>/workspace/ (cron, tasks)
+	//   OPENCLAW_STATE_DIR     → <workDir>/<instanceID>/state/     (plugins, registry, logs)
 	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("OPENCLAW_CONFIG_DIR=%s", h.configDir),
-		fmt.Sprintf("OPENCLAW_STATE_DIR=%s", h.workDir),
+		fmt.Sprintf("OPENCLAW_CONFIG_DIR=%s", instanceConfigDir),
+		fmt.Sprintf("OPENCLAW_WORKSPACE_DIR=%s", instanceWorkspaceDir),
+		fmt.Sprintf("OPENCLAW_STATE_DIR=%s", instanceStateDir),
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	// Start process
 	if err := cmd.Start(); err != nil {
@@ -285,6 +329,43 @@ func (h *OpenClawHandler) StartFrameworkInstance(ctx context.Context, instanceID
 		Port:       port,
 		Running:    true,
 		AgentID:    instanceID,
+	}
+
+	return nil
+}
+
+// initializeInstanceState copies plugin state from cache or ImageVolume to the
+// per-instance state directory, then rewrites registry paths to match the runtime location.
+func (h *OpenClawHandler) initializeInstanceState(stateDir string) error {
+	// Look for cached base state (copied from ImageVolume at handler startup)
+	sources := []string{
+		filepath.Join(h.workDir, ".openclaw-base"),
+		"/framework-rootfs/openclaw-state",
+	}
+
+	var sourceDir string
+	for _, s := range sources {
+		if _, err := os.Stat(s); err == nil {
+			sourceDir = s
+			break
+		}
+	}
+	if sourceDir == "" {
+		return fmt.Errorf("no OpenClaw state source found (tried: %v)", sources)
+	}
+
+	log.Printf("Initializing instance state from %s to %s", sourceDir, stateDir)
+
+	if err := CopyDir(sourceDir, stateDir); err != nil {
+		return fmt.Errorf("failed to copy state from %s: %w", sourceDir, err)
+	}
+
+	// Rewrite registry paths so plugin references point to this instance's state dir
+	registryPath := filepath.Join(stateDir, "plugins", "installs.json")
+	if err := RewriteRegistryPaths(registryPath, "/openclaw-state", stateDir); err != nil {
+		log.Printf("Warning: failed to rewrite registry paths: %v", err)
+	} else {
+		log.Printf("Rewrote registry paths: /openclaw-state → %s", stateDir)
 	}
 
 	return nil
@@ -443,8 +524,14 @@ func (h *OpenClawHandler) AdaptSkillsHarness(harness handler.SkillsHarnessInterf
 // ============================================================
 
 // LoadAgent creates agent wrapper and prepares Gateway config.
-func (h *OpenClawHandler) LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig) (agent.Agent, error) {
-	agentID := spec.Description
+// IMPORTANT: Uses agentName (from AIAgent CRD metadata.name) as agentID, NOT spec.Description.
+func (h *OpenClawHandler) LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig, agentName string) (agent.Agent, error) {
+	// Use provided agentName as agentID (this is the AIAgent CRD metadata.name)
+	// If not provided, fall back to spec.Description (for backwards compatibility)
+	agentID := agentName
+	if agentID == "" {
+		agentID = spec.Description
+	}
 
 	// Save agentConfig for port resolution
 	if spec.AgentConfig != nil && spec.AgentConfig.Raw != nil {

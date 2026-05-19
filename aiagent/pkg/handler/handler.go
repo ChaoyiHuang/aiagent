@@ -243,7 +243,8 @@ type Handler interface {
 
 	// ── Core Responsibility #4: Agent Lifecycle (via Framework) ──
 	// Load agent creates agent wrapper (framework runs agent internally)
-	LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harness *HarnessConfig) (agent.Agent, error)
+	// agentName is the AIAgent CRD metadata.name, used as unique agent identifier
+	LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harness *HarnessConfig, agentName string) (agent.Agent, error)
 	// Start agent notifies framework to activate agent
 	StartAgent(ctx context.Context, ag agent.Agent, config *AgentConfig) error
 	StopAgent(ctx context.Context, agentID string) error

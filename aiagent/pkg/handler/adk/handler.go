@@ -408,8 +408,15 @@ func (h *ADKHandler) AdaptSkillsHarness(harness handler.SkillsHarnessInterface) 
 // ============================================================
 
 // LoadAgent creates agent wrapper.
-func (h *ADKHandler) LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig) (agent.Agent, error) {
-	agentID := spec.Description
+// IMPORTANT: Uses agentName (from AIAgent CRD metadata.name) as agentID, NOT spec.Description.
+// This ensures each agent has a unique identifier for isolated mode.
+func (h *ADKHandler) LoadAgent(ctx context.Context, spec *v1.AIAgentSpec, harnessCfg *handler.HarnessConfig, agentName string) (agent.Agent, error) {
+	// Use provided agentName as agentID (this is the AIAgent CRD metadata.name)
+	// If not provided, fall back to spec.Description (for backwards compatibility)
+	agentID := agentName
+	if agentID == "" {
+		agentID = spec.Description
+	}
 
 	// Generate config file
 	configData, err := h.GenerateFrameworkConfig(spec, harnessCfg)

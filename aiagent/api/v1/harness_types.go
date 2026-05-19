@@ -110,6 +110,9 @@ type ModelConfig struct {
 	// Allowed indicates if this model is accessible.
 	Allowed bool `json:"allowed"`
 
+	// ContextWindow is the maximum context length for this model.
+	ContextWindow int32 `json:"contextWindow,omitempty"`
+
 	// RateLimit override for this specific model.
 	RateLimit *RateLimitConfig `json:"rateLimit,omitempty"`
 

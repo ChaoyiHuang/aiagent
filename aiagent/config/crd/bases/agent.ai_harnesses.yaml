@@ -244,6 +244,10 @@ spec:
                         allowed:
                           description: Allowed indicates if this model is accessible.
                           type: boolean
+                        contextWindow:
+                          description: ContextWindow is the maximum context length for this model.
+                          format: int32
+                          type: integer
                         costPerToken:
                           description: CostPerToken cost per token for billing.
                           type: number

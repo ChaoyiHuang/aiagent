@@ -47,6 +47,7 @@ import (
 	"syscall"
 	"time"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"gopkg.in/yaml.v3"
 
 	"aiagent/api/v1"
@@ -174,6 +175,16 @@ func main() {
 	log.Printf("Namespace: %s", ns)
 	log.Printf("Base Gateway Port: %d", baseP)
 
+	// Initialize OpenClaw state directory with plugins from ImageVolume
+	// OpenClaw 2026 Architecture:
+	// - Build time: OPENCLAW_STATE_DIR=/openclaw-state (plugins installed here)
+	// - Runtime: Copy /framework-rootfs/openclaw-state to /shared/workdir
+	// - Set OPENCLAW_STATE_DIR=/shared/workdir (registry paths will match)
+	// ImageVolume is read-only, so we copy plugin files to a writable location
+	if err := initializeOpenClawState(wd, fwBin); err != nil {
+		log.Printf("Warning: failed to initialize OpenClaw state: %v", err)
+	}
+
 	// Create Handler configuration
 	handlerCfg := &handler.HandlerConfig{
 		Type:         handler.HandlerTypeOpenClaw,
@@ -237,6 +248,14 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 
 	// 3. Build HarnessConfig from HarnessManager
 	harnessCfg := buildHarnessConfig(harnessMgr)
+	if *debug {
+		if harnessCfg.Model != nil {
+			log.Printf("DEBUG: Model harness loaded: Provider=%s, Endpoint=%s, DefaultModel=%s",
+				harnessCfg.Model.Provider, harnessCfg.Model.Endpoint, harnessCfg.Model.DefaultModel)
+		} else {
+			log.Printf("DEBUG: Model harness is nil")
+		}
+	}
 
 	// 4. Prepare config directory
 	configDir = filepath.Join(workDir, "openclaw-config")
@@ -253,13 +272,18 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 	portAssignments := make(map[string]int)
 	nextPort := basePort
 
-	// Poll interval
-	pollInterval := 5 * time.Second
+	// Track last state for change detection
+	lastAgentCount := 0
+	lastGatewayRunning := false
+	lastGatewayInstances := 0
+
+	// Poll interval (reduced to 30s to minimize log spam)
+	pollInterval := 30 * time.Second
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	// Initial load
-	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+	loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort, true)
 
 	for {
 		select {
@@ -268,11 +292,11 @@ func runHandler(ctx context.Context, h *openclaw.OpenClawHandler, harnessDir str
 			return cleanup(ctx, h, loadedGateways)
 
 		case <-ticker.C:
-			// Poll for changes
-			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort)
+			// Poll for changes (silent mode - only log on changes)
+			loadGatewaysFromIndex(ctx, h, agentIndexPath, agentConfigDir, workDir, configDir, harnessCfg, loadedGateways, portAssignments, &nextPort, false)
 
-			// Check Gateway health
-			checkGatewayHealth(ctx, h)
+			// Check Gateway health (only log on changes)
+			lastAgentCount, lastGatewayRunning, lastGatewayInstances = checkGatewayHealthWithChangeDetection(ctx, h, lastAgentCount, lastGatewayRunning, lastGatewayInstances)
 		}
 	}
 }
@@ -307,8 +331,22 @@ func loadHarnessConfigs(harnessDir string) ([]*v1.HarnessSpec, error) {
 }
 
 // loadSingleHarnessConfig loads a single Harness configuration.
+// Priority: 1) harness.json (new format from Controller)
+//           2) Individual YAML files (legacy format)
 func loadSingleHarnessConfig(harnessPath string, harnessName string) (*v1.HarnessSpec, error) {
-	// Read harness type
+	// First, try to load harness.json (new format from Controller)
+	jsonPath := filepath.Join(harnessPath, "harness.json")
+	jsonData, err := os.ReadFile(jsonPath)
+	if err == nil {
+		// Parse JSON format directly
+		var spec v1.HarnessSpec
+		if err := json.Unmarshal(jsonData, &spec); err != nil {
+			return nil, fmt.Errorf("failed to parse harness.json: %w", err)
+		}
+		return &spec, nil
+	}
+
+	// Fall back to legacy format: read harness-type and load type-specific YAML
 	typePath := filepath.Join(harnessPath, "harness-type")
 	typeData, err := os.ReadFile(typePath)
 	if err != nil {
@@ -412,12 +450,38 @@ func loadModelHarnessConfig(harnessPath string) (*v1.ModelHarnessSpec, error) {
 		return nil, fmt.Errorf("failed to read model.yaml: %w", err)
 	}
 
-	var spec v1.ModelHarnessSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	// Convert YAML to JSON first to use JSON tags correctly
+	// YAML unmarshaling uses struct field names, not JSON tags
+	// So we need to convert YAML -> map -> JSON -> struct
+	var yamlMap map[string]interface{}
+	if err := yaml.Unmarshal(data, &yamlMap); err != nil {
 		return nil, fmt.Errorf("failed to parse model.yaml: %w", err)
 	}
 
+	jsonData, err := json.Marshal(yamlMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
+	}
+
+	var spec v1.ModelHarnessSpec
+	if err := json.Unmarshal(jsonData, &spec); err != nil {
+		return nil, fmt.Errorf("failed to parse model config: %w", err)
+	}
+
 	return &spec, nil
+}
+
+// yamlToJSON converts YAML data to JSON for proper struct unmarshaling using JSON tags.
+func yamlToJSON(data []byte, target interface{}) error {
+	var yamlMap map[string]interface{}
+	if err := yaml.Unmarshal(data, &yamlMap); err != nil {
+		return err
+	}
+	jsonData, err := json.Marshal(yamlMap)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(jsonData, target)
 }
 
 func loadMCPHarnessConfig(harnessPath string) (*v1.MCPHarnessSpec, error) {
@@ -428,7 +492,7 @@ func loadMCPHarnessConfig(harnessPath string) (*v1.MCPHarnessSpec, error) {
 	}
 
 	var spec v1.MCPHarnessSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	if err := yamlToJSON(data, &spec); err != nil {
 		return nil, fmt.Errorf("failed to parse mcp.yaml: %w", err)
 	}
 
@@ -443,7 +507,7 @@ func loadMemoryHarnessConfig(harnessPath string) (*v1.MemoryHarnessSpec, error) 
 	}
 
 	var spec v1.MemoryHarnessSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	if err := yamlToJSON(data, &spec); err != nil {
 		return nil, fmt.Errorf("failed to parse memory.yaml: %w", err)
 	}
 
@@ -458,7 +522,7 @@ func loadSandboxHarnessConfig(harnessPath string) (*v1.SandboxHarnessSpec, error
 	}
 
 	var spec v1.SandboxHarnessSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	if err := yamlToJSON(data, &spec); err != nil {
 		return nil, fmt.Errorf("failed to parse sandbox.yaml: %w", err)
 	}
 
@@ -473,7 +537,7 @@ func loadSkillsHarnessConfig(harnessPath string) (*v1.SkillsHarnessSpec, error) 
 	}
 
 	var spec v1.SkillsHarnessSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	if err := yamlToJSON(data, &spec); err != nil {
 		return nil, fmt.Errorf("failed to parse skills.yaml: %w", err)
 	}
 
@@ -508,12 +572,13 @@ func buildHarnessConfig(mgr *harness.HarnessManager) *handler.HarnessConfig {
 }
 
 // loadGatewaysFromIndex loads gateways from agent-index.yaml (written by Config Daemon).
-func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int) {
+// verbose: if true, always log status; if false, only log on changes (new agents)
+func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, indexPath string, agentConfigDir string, workDir string, configDir string, harnessCfg *handler.HarnessConfig, loadedGateways map[string]bool, portAssignments map[string]int, nextPort *int, verbose bool) {
 	// Read agent index
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if *debug {
+			if verbose {
 				log.Printf("Agent index not found at %s, waiting for Config Daemon", indexPath)
 			}
 			return
@@ -528,7 +593,22 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 		return
 	}
 
-	log.Printf("AgentIndex contains %d agents", len(index.Agents))
+	// Count new agents to load
+	newAgents := 0
+	for _, entry := range index.Agents {
+		if loadedGateways[entry.Name] {
+			continue // Already loaded
+		}
+		if entry.Phase != "Running" && entry.Phase != "Pending" && entry.Phase != "Migrating" && entry.Phase != "Scheduling" {
+			continue
+		}
+		newAgents++
+	}
+
+	// Only log if verbose or there are new agents (silent otherwise)
+	if verbose || newAgents > 0 {
+		log.Printf("AgentIndex: %d agents, %d loaded, %d new", len(index.Agents), len(loadedGateways), newAgents)
+	}
 
 	// Process each agent (each becomes a Gateway instance)
 	for _, entry := range index.Agents {
@@ -536,7 +616,7 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 			continue // Already loaded
 		}
 
-		if entry.Phase != "Running" && entry.Phase != "Pending" {
+		if entry.Phase != "Running" && entry.Phase != "Pending" && entry.Phase != "Migrating" && entry.Phase != "Scheduling" {
 			continue
 		}
 
@@ -570,8 +650,14 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 		*nextPort = *nextPort + 1
 		portAssignments[entry.Name] = port
 
-		// Start Gateway instance
-		if err := h.StartFrameworkInstance(ctx, entry.Name, configPath); err != nil {
+		// Extract channel token env vars from ConfigDaemon-resolved agentConfig
+		channelEnv := extractOpenClawChannelEnvVars(agentConfig)
+		if len(channelEnv) > 0 {
+			log.Printf("Injecting %d channel env vars for %s", len(channelEnv), entry.Name)
+		}
+
+		// Start Gateway instance with channel token env vars
+		if err := h.StartFrameworkInstance(ctx, entry.Name, configPath, channelEnv...); err != nil {
 			log.Printf("Error starting Gateway for %s: %v", entry.Name, err)
 			continue
 		}
@@ -580,6 +666,49 @@ func loadGatewaysFromIndex(ctx context.Context, h *openclaw.OpenClawHandler, ind
 		loadedGateways[entry.Name] = true
 	}
 }
+
+// extractOpenClawChannelEnvVars extracts channel token env vars from
+// ConfigDaemon-resolved agentConfig. ConfigDaemon has already recursively
+// replaced all tokenSecretRef fields with actual token values, so this
+// function simply reads the resolved tokens from known channel paths
+// and produces subprocess env vars (e.g., DISCORD_BOT_TOKEN=<token>).
+// This is OpenClaw-specific logic — it knows the channel config schema.
+func extractOpenClawChannelEnvVars(agentConfig map[string]interface{}) []string {
+	if agentConfig == nil {
+		return nil
+	}
+
+	channels, ok := agentConfig["channels"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	var envVars []string
+
+	// Discord: channels.discord.token -> DISCORD_BOT_TOKEN env var
+	if discord, ok := channels["discord"].(map[string]interface{}); ok {
+		if token, ok := discord["token"].(string); ok && token != "" {
+			envVars = append(envVars, "DISCORD_BOT_TOKEN="+token)
+		}
+	}
+
+	// Telegram: channels.telegram.token -> TELEGRAM_BOT_TOKEN env var
+	if telegram, ok := channels["telegram"].(map[string]interface{}); ok {
+		if token, ok := telegram["token"].(string); ok && token != "" {
+			envVars = append(envVars, "TELEGRAM_BOT_TOKEN="+token)
+		}
+	}
+
+	// Slack: channels.slack.token -> SLACK_BOT_TOKEN env var
+	if slack, ok := channels["slack"].(map[string]interface{}); ok {
+		if token, ok := slack["token"].(string); ok && token != "" {
+			envVars = append(envVars, "SLACK_BOT_TOKEN="+token)
+		}
+	}
+
+	return envVars
+}
+
 
 // loadAgentFromHostPath loads agent config from hostPath directory.
 // Config Daemon writes: /var/lib/aiagent/configs/<namespace>/<agent-name>/agent-config.json and agent-meta.yaml
@@ -645,26 +774,52 @@ func loadAgentFromHostPath(agentName string, agentConfigDir string) (*v1.AIAgent
 	return agentSpec, agentConfig, nil
 }
 
-// generateGatewayConfig generates Gateway config using agentConfig or agentSpec.
+// generateGatewayConfig generates Gateway config by merging agentConfig with harnessCfg.
+// agentConfig contains agent-specific settings (channels, gateway, internal agents)
+// harnessCfg contains shared platform capabilities (models, skills, memory)
+// Config uses env var names (e.g., "DEEPSEEK_API_KEY") - OpenClaw resolves from env at runtime.
 func generateGatewayConfig(h *openclaw.OpenClawHandler, agentSpec *v1.AIAgentSpec, agentConfig map[string]interface{}, harnessCfg *handler.HarnessConfig) ([]byte, error) {
-	// If agentConfig is provided, use it directly
+	// Build AIAgentSpec with agentConfig.Raw from the loaded config
+	spec := agentSpec
 	if agentConfig != nil {
-		return json.MarshalIndent(agentConfig, "", "  ")
+		// Marshal agentConfig to Raw JSON so converter can process it
+		rawConfig, err := json.Marshal(agentConfig)
+		if err != nil {
+			log.Printf("Error marshaling agentConfig: %v", err)
+		} else {
+			spec = &v1.AIAgentSpec{
+				Description:   agentSpec.Description,
+				RuntimeRef:    agentSpec.RuntimeRef,
+				AgentConfig:   &apiextensionsv1.JSON{Raw: rawConfig},
+				HarnessOverride: agentSpec.HarnessOverride,
+			}
+		}
 	}
 
-	// Otherwise, generate from agentSpec + harnessCfg
-	return h.GenerateFrameworkConfig(agentSpec, harnessCfg)
+	// Generate config by merging agentSpec with harnessCfg
+	// Converter outputs env var names (e.g., "DEEPSEEK_API_KEY") in config
+	// OpenClaw resolves these from environment at runtime
+	return h.GenerateFrameworkConfig(spec, harnessCfg)
 }
 
-// checkGatewayHealth checks health of Gateway processes.
-func checkGatewayHealth(ctx context.Context, h *openclaw.OpenClawHandler) {
+// checkGatewayHealthWithChangeDetection checks health and only logs on state changes.
+// Returns the current state for comparison in next iteration.
+func checkGatewayHealthWithChangeDetection(ctx context.Context, h *openclaw.OpenClawHandler, lastAgentCount int, lastRunning bool, lastInstances int) (int, bool, int) {
 	status, err := h.GetFrameworkStatus(ctx)
 	if err != nil {
-		log.Printf("Error getting Gateway status: %v", err)
-		return
+		// Only log error if it's new (previous state was healthy)
+		if lastRunning {
+			log.Printf("Error getting Gateway status: %v", err)
+		}
+		return lastAgentCount, false, 0
 	}
 
-	log.Printf("Gateway status: running=%v, instances=%d, health=%s", status.Running, status.InstanceCount, status.Health)
+	// Only log if state changed (running status or instance count)
+	if status.Running != lastRunning || status.InstanceCount != lastInstances {
+		log.Printf("Gateway status: running=%v, instances=%d, health=%s", status.Running, status.InstanceCount, status.Health)
+	}
+
+	return lastAgentCount, status.Running, status.InstanceCount
 }
 
 // cleanup stops all Gateway processes.
@@ -682,5 +837,36 @@ func cleanup(ctx context.Context, h *openclaw.OpenClawHandler, loadedGateways ma
 		log.Printf("Error stopping Framework: %v", err)
 	}
 
+	return nil
+}
+
+// initializeOpenClawState caches OpenClaw state from the ImageVolume to a base directory.
+// The cached state is then copied per-instance in the handler's StartFrameworkInstance.
+// This avoids copying from the read-only ImageVolume for every Gateway instance.
+func initializeOpenClawState(workDir string, frameworkBin string) error {
+	sourceDir := "/framework-rootfs/openclaw-state"
+	if _, err := os.Stat(sourceDir); err != nil {
+		return fmt.Errorf("OpenClaw state source not found in ImageVolume: %w", err)
+	}
+
+	// Cache to .openclaw-base/ subdirectory (not directly in workDir)
+	baseDir := filepath.Join(workDir, ".openclaw-base")
+
+	if _, err := os.Stat(baseDir); err == nil {
+		log.Printf("OpenClaw state cache already exists at %s", baseDir)
+		return nil
+	}
+
+	log.Printf("Caching OpenClaw state at %s (copying from ImageVolume %s)", baseDir, sourceDir)
+
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	if err := openclaw.CopyDir(sourceDir, baseDir); err != nil {
+		return fmt.Errorf("failed to copy OpenClaw state: %w", err)
+	}
+
+	log.Printf("OpenClaw state cached successfully at %s", baseDir)
 	return nil
 }

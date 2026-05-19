@@ -47,8 +47,8 @@ rules:
   - harnesses/status
   - agentruntimes
   - agentruntimes/status
-  - aigents
-  - aigents/status
+  - aiagents
+  - aiagents/status
   verbs:
   - create
   - delete
@@ -62,7 +62,7 @@ rules:
   resources:
   - harnesses/finalizers
   - agentruntimes/finalizers
-  - aigents/finalizers
+  - aiagents/finalizers
   verbs:
   - update
 ---

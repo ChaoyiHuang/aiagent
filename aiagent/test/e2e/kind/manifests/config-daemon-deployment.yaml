@@ -16,15 +16,19 @@ metadata:
 rules:
 # AIAgent permissions (read-only for watching)
 - apiGroups: ["agent.ai"]
-  resources: ["aigents"]
+  resources: ["aiagents"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["agent.ai"]
-  resources: ["aigents/status"]
+  resources: ["aiagents/status"]
   verbs: ["get", "list", "watch"]
 # Pod permissions (for discovering runtime pods)
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
+# Secret permissions (for reading channel secrets like Discord token)
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

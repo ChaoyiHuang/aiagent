@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -170,13 +171,20 @@ func (r *HarnessReconciler) createHarnessConfigMap(ctx context.Context, harness 
 }
 
 // generateHarnessConfigData generates ConfigMap data from Harness spec.
+// Generates both harness.json (new format) and type-specific YAML (legacy format)
 func (r *HarnessReconciler) generateHarnessConfigData(harness *v1.Harness) map[string]string {
 	data := map[string]string{
 		"harness-name": harness.Name,
 		"harness-type": string(harness.Spec.Type),
 	}
 
-	// Generate type-specific config
+	// Generate harness.json (new format - complete Harness spec as JSON)
+	specJSON, err := json.Marshal(harness.Spec)
+	if err == nil {
+		data["harness.json"] = string(specJSON)
+	}
+
+	// Generate type-specific config (legacy format)
 	switch harness.Spec.Type {
 	case v1.HarnessTypeModel:
 		if harness.Spec.Model != nil {

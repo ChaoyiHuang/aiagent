@@ -3,6 +3,7 @@
 package base
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,10 +28,16 @@ func NewHarnessLoader(harnessDir string) *HarnessLoader {
 }
 
 // LoadHarnessConfigs loads all Harness configurations from the mounted directory.
-// Expected structure:
+// Expected structure (new format - framework-agnostic):
 //   /etc/harness/<harness-name>/
 //     ├── harness-name        (contains harness CRD name)
 //     ├── harness-type        (contains harness type: model, mcp, etc.)
+//     └── harness.json        (raw Harness spec JSON from Controller)
+//
+// Legacy structure (still supported for backwards compatibility):
+//   /etc/harness/<harness-name>/
+//     ├── harness-name        (contains harness CRD name)
+//     ├── harness-type        (contains harness type)
 //     └── model.yaml          (for model harness)
 //     └── mcp.yaml            (for mcp harness)
 //     └── memory.yaml         (for memory harness)
@@ -64,8 +71,22 @@ func (l *HarnessLoader) LoadHarnessConfigs() ([]*v1.HarnessSpec, error) {
 }
 
 // loadHarnessSpec loads a single Harness spec from a directory.
+// Priority: 1) harness.json (new format, framework-agnostic)
+//           2) Individual YAML files (legacy format, for backwards compatibility)
 func (l *HarnessLoader) loadHarnessSpec(harnessPath string, harnessName string) (*v1.HarnessSpec, error) {
-	// Read harness type from harness-type file
+	// First, try to load harness.json (new format from Controller)
+	jsonPath := filepath.Join(harnessPath, "harness.json")
+	jsonData, err := os.ReadFile(jsonPath)
+	if err == nil {
+		// Parse JSON format
+		var spec v1.HarnessSpec
+		if err := json.Unmarshal(jsonData, &spec); err != nil {
+			return nil, fmt.Errorf("failed to parse harness.json: %w", err)
+		}
+		return &spec, nil
+	}
+
+	// Fall back to legacy format: read harness-type and load type-specific YAML
 	typePath := filepath.Join(harnessPath, "harness-type")
 	harnessTypeBytes, err := os.ReadFile(typePath)
 	if err != nil {
@@ -77,7 +98,7 @@ func (l *HarnessLoader) loadHarnessSpec(harnessPath string, harnessName string) 
 		Type: v1.HarnessType(harnessType),
 	}
 
-	// Load type-specific configuration based on harness type
+	// Load type-specific configuration based on harness type (legacy YAML format)
 	switch v1.HarnessType(harnessType) {
 	case v1.HarnessTypeModel:
 		modelSpec, err := l.loadModelSpec(harnessPath)
