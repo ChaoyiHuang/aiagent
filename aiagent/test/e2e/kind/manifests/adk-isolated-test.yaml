@@ -34,12 +34,12 @@ spec:
   type: model
   model:
     provider: deepseek
-    endpoint: https://api.deepseek.com/v1
-    defaultModel: deepseek-chat
+    endpoint: https://api.deepseek.com
+    defaultModel: deepseek-v4-flash
     models:
-    - name: deepseek-chat
+    - name: deepseek-v4-flash
       allowed: true
-    - name: deepseek-coder
+    - name: deepseek-v4-pro
       allowed: true
 
 ---
@@ -83,7 +83,7 @@ spec:
     name: adk-isolated-runtime
   agentConfig:
     instruction: "You are a specialized AI assistant for data analysis."
-    model: "deepseek-chat"
+    model: "deepseek-v4-flash"
     tools:
     - name: "data_processor"
       type: "transform"
@@ -104,7 +104,7 @@ spec:
     name: adk-isolated-runtime
   agentConfig:
     instruction: "You are a specialized AI assistant for code generation."
-    model: "deepseek-coder"
+    model: "deepseek-v4-pro"
     tools:
     - name: "code_generator"
       type: "synthesize"
@@ -125,7 +125,7 @@ spec:
     name: adk-isolated-runtime
   agentConfig:
     instruction: "You are a specialized AI assistant for documentation."
-    model: "deepseek-chat"
+    model: "deepseek-v4-flash"
     tools:
     - name: "doc_writer"
       type: "generate"

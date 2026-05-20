@@ -12,7 +12,7 @@ spec:
   # ADK Handler will read this and generate ADK-specific agent.yaml
   agentConfig:
     instruction: "You are a helpful AI assistant specialized in general tasks."
-    model: "deepseek-chat"
+    model: "deepseek-v4-flash"
     tools:
     - name: "search"
       type: "web_search"
@@ -22,7 +22,7 @@ spec:
     model:
     - name: model-harness-deepseek
       allowedModels:
-      - deepseek-chat
+      - deepseek-v4-flash
     skills:
     - name: skills-harness-local
       allowedSkills:
@@ -60,7 +60,7 @@ spec:
     # Each Gateway can manage multiple internal agents
     agents:
       defaults:
-        model: "deepseek-chat"   # Override inherited model for sub-agents
+        model: "deepseek-v4-flash"   # Override inherited model for sub-agents
         thinkingDefault: "medium"
       list:
       - id: "weather"
@@ -142,5 +142,5 @@ spec:
     type: adk-go  # Type-based auto scheduling
   agentConfig:
     instruction: "You are a simple AI assistant."
-    model: "deepseek-chat"
+    model: "deepseek-v4-flash"
   description: "Simple AI Agent with minimal config"

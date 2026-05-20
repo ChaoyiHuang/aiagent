@@ -10,12 +10,12 @@ spec:
     provider: deepseek
     endpoint: https://api.deepseek.com
     authSecretRef: deepseek-api-key-secret
-    defaultModel: deepseek-chat
+    defaultModel: deepseek-v4-flash
     models:
-    - name: deepseek-chat
+    - name: deepseek-v4-flash
       allowed: true
       maxTokens: 8192
-    - name: deepseek-reasoner
+    - name: deepseek-v4-pro
       allowed: true
       maxTokens: 16384
     rateLimit:

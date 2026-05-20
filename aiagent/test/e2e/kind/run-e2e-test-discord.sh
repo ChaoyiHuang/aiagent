@@ -436,14 +436,14 @@ spec:
   type: model
   model:
     provider: deepseek
-    endpoint: https://api.deepseek.com/v1
+    endpoint: https://api.deepseek.com
     authSecretRef: deepseek-api-key
-    defaultModel: deepseek-chat
+    defaultModel: deepseek-v4-flash
     models:
-    - name: deepseek-chat
+    - name: deepseek-v4-flash
       allowed: true
       contextWindow: 164000
-    - name: deepseek-coder
+    - name: deepseek-v4-pro
       allowed: true
       contextWindow: 164000
 
