@@ -1,16 +1,13 @@
 // Package controller provides AIAgent Controller for managing AI Agent business objects.
 // AIAgent Controller handles:
 // - Agent scheduling to AgentRuntime
-// - Agent ConfigMap creation
-// - Agent Index ConfigMap updates (notify AgentHandler)
 // - PVC lifecycle management
 // - Agent migration support
+// Note: AgentConfig and AgentIndex are managed by Config Daemon via hostPath.
 package controller
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,8 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"gopkg.in/yaml.v3"
-
 	"aiagent/api/v1"
 	"aiagent/pkg/scheduler"
 )
@@ -35,12 +30,6 @@ import (
 const (
 	// AIAgentFinalizer is used for cleanup on deletion.
 	AIAgentFinalizer = "agent.ai/aigent-finalizer"
-
-	// AgentConfigMapPrefix is the prefix for agent-specific ConfigMaps.
-	AgentConfigMapPrefix = "agent-config-"
-
-	// AgentIndexConfigMapPrefix is the prefix for agent index ConfigMaps.
-	AgentIndexConfigMapPrefix = "agent-index-"
 
 	// AgentPVCPrefix is the prefix for agent PVCs.
 	AgentPVCPrefix = "agent-pvc-"
@@ -57,7 +46,6 @@ type AIAgentReconciler struct {
 func (r *AIAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.AIAgent{}).
-		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Watches(
 			&v1.AgentRuntime{},
@@ -110,7 +98,6 @@ func (r *AIAgentReconciler) runtimeToAgentMapper(ctx context.Context, obj client
 //+kubebuilder:rbac:groups=agent.ai,resources=aigents/finalizers,verbs=update
 //+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=agent.ai,resources=agentruntimes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles the reconciliation loop for AIAgent.
@@ -192,19 +179,10 @@ func (r *AIAgentReconciler) handleDeletion(ctx context.Context, agent *v1.AIAgen
 	return ctrl.Result{}, nil
 }
 
-// cleanupAgentResources cleans up ConfigMaps and PVCs created for the agent.
+// cleanupAgentResources cleans up PVCs created for the agent.
+// Note: ConfigMaps are managed by Config Daemon, no need to cleanup here.
 func (r *AIAgentReconciler) cleanupAgentResources(ctx context.Context, agent *v1.AIAgent) error {
 	log := log.FromContext(ctx)
-
-	// Delete Agent ConfigMap
-	agentCMName := AgentConfigMapPrefix + agent.Name
-	agentCM := &corev1.ConfigMap{}
-	agentCM.Namespace = agent.Namespace
-	agentCM.Name = agentCMName
-	if err := r.Delete(ctx, agentCM); err != nil && !errors.IsNotFound(err) {
-		log.Error(err, "failed to delete agent ConfigMap", "name", agentCMName)
-		return err
-	}
 
 	// Delete PVC if VolumePolicy is delete
 	if agent.Spec.VolumePolicy == v1.VolumePolicyDelete {
@@ -282,6 +260,7 @@ func (r *AIAgentReconciler) handleScheduling(ctx context.Context, agent *v1.AIAg
 }
 
 // handleBinding binds the agent to the runtime and creates resources.
+// Note: AgentConfig and AgentIndex are now managed by Config Daemon via hostPath.
 func (r *AIAgentReconciler) handleBinding(ctx context.Context, agent *v1.AIAgent) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -311,25 +290,13 @@ func (r *AIAgentReconciler) handleBinding(ctx context.Context, agent *v1.AIAgent
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	// Create Agent ConfigMap
-	if err := r.createAgentConfigMap(ctx, agent); err != nil {
-		log.Error(err, "failed to create agent ConfigMap")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
-	}
-
 	// Create PVC if needed
 	if err := r.createAgentPVC(ctx, agent); err != nil {
 		log.Error(err, "failed to create agent PVC")
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
 	}
 
-	// Update Agent Index ConfigMap (notify AgentHandler)
-	if err := r.updateAgentIndex(ctx, runtime, agent, "Pending"); err != nil {
-		log.Error(err, "failed to update agent index")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
-	}
-
-	// Bind to runtime status
+	// Bind to runtime status (Config Daemon will pick up the binding and write to hostPath)
 	if err := r.bindToRuntime(ctx, runtime, agent); err != nil {
 		log.Error(err, "failed to bind to runtime")
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
@@ -351,6 +318,7 @@ func (r *AIAgentReconciler) handleBinding(ctx context.Context, agent *v1.AIAgent
 }
 
 // handleRunning maintains the running agent.
+// Note: AgentIndex updates are handled by Config Daemon via hostPath.
 func (r *AIAgentReconciler) handleRunning(ctx context.Context, agent *v1.AIAgent) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -384,15 +352,11 @@ func (r *AIAgentReconciler) handleRunning(ctx context.Context, agent *v1.AIAgent
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Update agent index phase to Running
-	if err := r.updateAgentIndex(ctx, runtime, agent, "Running"); err != nil {
-		log.Error(err, "failed to update agent index phase")
-	}
-
 	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 }
 
 // handleMigration handles agent migration between runtimes.
+// Note: Config Daemon will detect the runtimeRef change and update hostPath accordingly.
 func (r *AIAgentReconciler) handleMigration(ctx context.Context, agent *v1.AIAgent) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -431,12 +395,7 @@ func (r *AIAgentReconciler) handleMigration(ctx context.Context, agent *v1.AIAge
 		}
 	}
 
-	// Update agent index on new runtime
-	if err := r.updateAgentIndex(ctx, targetRuntime, agent, "Pending"); err != nil {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
-	}
-
-	// Bind to new runtime
+	// Bind to new runtime (Config Daemon will detect and update hostPath)
 	if err := r.bindToRuntime(ctx, targetRuntime, agent); err != nil {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
 	}
@@ -453,145 +412,6 @@ func (r *AIAgentReconciler) handleMigration(ctx context.Context, agent *v1.AIAge
 
 	log.Info("Agent migrated to new runtime", "runtime", targetRuntime.Name)
 	return ctrl.Result{Requeue: true}, nil
-}
-
-// createAgentConfigMap creates the agent-specific ConfigMap.
-func (r *AIAgentReconciler) createAgentConfigMap(ctx context.Context, agent *v1.AIAgent) error {
-	cmName := AgentConfigMapPrefix + agent.Name
-	cm := &corev1.ConfigMap{
-		ObjectMeta: ctrl.ObjectMeta{
-			Name:      cmName,
-			Namespace: agent.Namespace,
-			Labels: map[string]string{
-				"agent.ai/agent":     agent.Name,
-				"agent.ai/component": "agent-config",
-			},
-		},
-		Data: map[string]string{
-			"agent.yaml": r.generateAgentConfigYAML(agent),
-		},
-	}
-
-	// Set owner reference
-	if err := controllerutil.SetControllerReference(agent, cm, r.Scheme); err != nil {
-		return err
-	}
-
-	// Create or update
-	existingCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: agent.Namespace}, existingCM); err != nil {
-		if errors.IsNotFound(err) {
-			return r.Create(ctx, cm)
-		}
-		return err
-	}
-
-	existingCM.Data = cm.Data
-	return r.Update(ctx, existingCM)
-}
-
-// generateAgentConfigYAML generates YAML config from AIAgent spec.
-func (r *AIAgentReconciler) generateAgentConfigYAML(agent *v1.AIAgent) string {
-	// Build config as map for proper YAML serialization
-	config := map[string]interface{}{
-		"name":         agent.Name,
-		"description":  agent.Spec.Description,
-		"runtimeRef": map[string]string{
-			"type": agent.Spec.RuntimeRef.Type,
-			"name": agent.Spec.RuntimeRef.Name,
-		},
-		"volumePolicy": string(agent.Spec.VolumePolicy),
-	}
-
-	// Add AgentConfig if present (this is the key field for framework-specific config)
-	if agent.Spec.AgentConfig != nil && len(agent.Spec.AgentConfig.Raw) > 0 {
-		var agentConfigData map[string]interface{}
-		if err := json.Unmarshal(agent.Spec.AgentConfig.Raw, &agentConfigData); err == nil {
-			config["agentConfig"] = agentConfigData
-		}
-	}
-
-	// Add HarnessOverride if present
-	if len(agent.Spec.HarnessOverride.MCP) > 0 ||
-		len(agent.Spec.HarnessOverride.Memory) > 0 ||
-		len(agent.Spec.HarnessOverride.Sandbox) > 0 ||
-		len(agent.Spec.HarnessOverride.Skills) > 0 ||
-		len(agent.Spec.HarnessOverride.Model) > 0 {
-		harnessOverride := map[string]interface{}{}
-
-		if len(agent.Spec.HarnessOverride.MCP) > 0 {
-			mcpOverrides := []map[string]interface{}{}
-			for _, o := range agent.Spec.HarnessOverride.MCP {
-				mcpOverrides = append(mcpOverrides, map[string]interface{}{
-					"name":           o.Name,
-					"allowedServers": o.AllowedServers,
-					"deniedServers":  o.DeniedServers,
-					"deny":           o.Deny,
-				})
-			}
-			harnessOverride["mcp"] = mcpOverrides
-		}
-
-		if len(agent.Spec.HarnessOverride.Memory) > 0 {
-			memoryOverrides := []map[string]interface{}{}
-			for _, o := range agent.Spec.HarnessOverride.Memory {
-				entry := map[string]interface{}{"name": o.Name}
-				if o.Config != nil && len(o.Config.Raw) > 0 {
-					var configData map[string]interface{}
-					if err := json.Unmarshal(o.Config.Raw, &configData); err == nil {
-						entry["config"] = configData
-					}
-				}
-				memoryOverrides = append(memoryOverrides, entry)
-			}
-			harnessOverride["memory"] = memoryOverrides
-		}
-
-		if len(agent.Spec.HarnessOverride.Sandbox) > 0 {
-			sandboxOverrides := []map[string]interface{}{}
-			for _, o := range agent.Spec.HarnessOverride.Sandbox {
-				sandboxOverrides = append(sandboxOverrides, map[string]interface{}{
-					"name": o.Name,
-					"deny": o.Deny,
-				})
-			}
-			harnessOverride["sandbox"] = sandboxOverrides
-		}
-
-		if len(agent.Spec.HarnessOverride.Skills) > 0 {
-			skillsOverrides := []map[string]interface{}{}
-			for _, o := range agent.Spec.HarnessOverride.Skills {
-				skillsOverrides = append(skillsOverrides, map[string]interface{}{
-					"name":          o.Name,
-					"allowedSkills": o.AllowedSkills,
-					"deniedSkills":  o.DeniedSkills,
-				})
-			}
-			harnessOverride["skills"] = skillsOverrides
-		}
-
-		if len(agent.Spec.HarnessOverride.Model) > 0 {
-			modelOverrides := []map[string]interface{}{}
-			for _, o := range agent.Spec.HarnessOverride.Model {
-				modelOverrides = append(modelOverrides, map[string]interface{}{
-					"name":           o.Name,
-					"allowedModels":  o.AllowedModels,
-					"deniedModels":   o.DeniedModels,
-				})
-			}
-			harnessOverride["model"] = modelOverrides
-		}
-
-		config["harnessOverride"] = harnessOverride
-	}
-
-	// Convert to YAML
-	yamlData, err := yaml.Marshal(config)
-	if err != nil {
-		// Fallback to simple format
-		return fmt.Sprintf("name: %s\ndescription: %s\n", agent.Name, agent.Spec.Description)
-	}
-	return string(yamlData)
 }
 
 // createAgentPVC creates the agent's PVC if needed.
@@ -640,118 +460,6 @@ func (r *AIAgentReconciler) createAgentPVC(ctx context.Context, agent *v1.AIAgen
 	return nil
 }
 
-// updateAgentIndex updates the Agent Index ConfigMap on the runtime.
-// This is the notification mechanism for AgentHandler.
-func (r *AIAgentReconciler) updateAgentIndex(ctx context.Context, runtime *v1.AgentRuntime, agent *v1.AIAgent, phase string) error {
-	log := log.FromContext(ctx)
-
-	indexCMName := AgentIndexConfigMapPrefix + runtime.Name
-
-	// Build agent index entry
-	entry := AgentIndexEntry{
-		Name:      agent.Name,
-		Namespace: agent.Namespace,
-		ConfigMap: AgentConfigMapPrefix + agent.Name,
-		Phase:     phase,
-		UID:       string(agent.UID),
-	}
-
-	// Get or create index ConfigMap
-	indexCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: indexCMName, Namespace: runtime.Namespace}, indexCM); err != nil {
-		if errors.IsNotFound(err) {
-			// Create new index ConfigMap
-			indexCM = &corev1.ConfigMap{
-				ObjectMeta: ctrl.ObjectMeta{
-					Name:      indexCMName,
-					Namespace: runtime.Namespace,
-					Labels: map[string]string{
-						"agent.ai/runtime":   runtime.Name,
-						"agent.ai/component": "agent-index",
-					},
-				},
-				Data: map[string]string{
-					"agent-index.yaml": r.generateAgentIndexYAML([]AgentIndexEntry{entry}),
-				},
-			}
-			// Set owner reference to runtime
-			if err := controllerutil.SetControllerReference(runtime, indexCM, r.Scheme); err != nil {
-				return err
-			}
-			log.Info("Creating agent index ConfigMap", "name", indexCMName)
-			return r.Create(ctx, indexCM)
-		}
-		return err
-	}
-
-	// Update existing index
-	var index AgentIndex
-	if err := r.parseAgentIndexYAML(indexCM.Data["agent-index.yaml"], &index); err != nil {
-		// If parse fails, start fresh
-		index = AgentIndex{Agents: []AgentIndexEntry{}}
-	}
-
-	// Find and update entry, or add new entry
-	found := false
-	for i, e := range index.Agents {
-		if e.Name == agent.Name && e.Namespace == agent.Namespace {
-			index.Agents[i] = entry
-			found = true
-			break
-		}
-	}
-	if !found {
-		index.Agents = append(index.Agents, entry)
-	}
-
-	indexCM.Data["agent-index.yaml"] = r.generateAgentIndexYAML(index.Agents)
-	log.Info("Updating agent index ConfigMap", "name", indexCMName, "agent", agent.Name, "phase", phase)
-	return r.Update(ctx, indexCM)
-}
-
-// AgentIndex represents the agent index structure.
-type AgentIndex struct {
-	Agents []AgentIndexEntry `yaml:"agents"`
-}
-
-// AgentIndexEntry represents an entry in the agent index.
-type AgentIndexEntry struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-	ConfigMap string `yaml:"configMap"`
-	Phase     string `yaml:"phase"`
-	UID       string `yaml:"uid,omitempty"`
-}
-
-// generateAgentIndexYAML generates YAML for agent index.
-func (r *AIAgentReconciler) generateAgentIndexYAML(entries []AgentIndexEntry) string {
-	result := "agents:\n"
-	for _, e := range entries {
-		result += fmt.Sprintf("  - name: %s\n    namespace: %s\n    configMap: %s\n    phase: %s\n    uid: %s\n",
-			e.Name, e.Namespace, e.ConfigMap, e.Phase, e.UID)
-	}
-	return result
-}
-
-// parseAgentIndexYAML parses agent index YAML.
-func (r *AIAgentReconciler) parseAgentIndexYAML(yamlStr string, index *AgentIndex) error {
-	if yamlStr == "" {
-		*index = AgentIndex{Agents: []AgentIndexEntry{}}
-		return nil
-	}
-
-	if err := yaml.Unmarshal([]byte(yamlStr), index); err != nil {
-		return fmt.Errorf("failed to parse agent index YAML: %w", err)
-	}
-
-	// Ensure Agents slice is not nil
-	if index.Agents == nil {
-		index.Agents = []AgentIndexEntry{}
-	}
-
-	return nil
-}
-
 // bindToRuntime binds the agent to the runtime's status.
 func (r *AIAgentReconciler) bindToRuntime(ctx context.Context, runtime *v1.AgentRuntime, agent *v1.AIAgent) error {
 	// Check if already bound
@@ -774,7 +482,8 @@ func (r *AIAgentReconciler) bindToRuntime(ctx context.Context, runtime *v1.Agent
 	return r.Status().Update(ctx, runtime)
 }
 
-// unbindFromRuntime removes the agent from runtime status and updates index.
+// unbindFromRuntime removes the agent from runtime status.
+// Note: Config Daemon will detect the removal and cleanup hostPath.
 func (r *AIAgentReconciler) unbindFromRuntime(ctx context.Context, agent *v1.AIAgent) error {
 	if agent.Status.RuntimeRef.Name == "" {
 		return nil
@@ -802,22 +511,6 @@ func (r *AIAgentReconciler) unbindFromRuntimeStatus(ctx context.Context, runtime
 	}
 	runtime.Status.Agents = newAgents
 	runtime.Status.AgentCount = int32(len(newAgents))
-
-	// Remove from agent index
-	indexCMName := AgentIndexConfigMapPrefix + runtime.Name
-	indexCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: indexCMName, Namespace: runtime.Namespace}, indexCM); err == nil {
-		var index AgentIndex
-		r.parseAgentIndexYAML(indexCM.Data["agent-index.yaml"], &index)
-		newEntries := []AgentIndexEntry{}
-		for _, e := range index.Agents {
-			if e.Name != agent.Name || e.Namespace != agent.Namespace {
-				newEntries = append(newEntries, e)
-			}
-		}
-		indexCM.Data["agent-index.yaml"] = r.generateAgentIndexYAML(newEntries)
-		r.Update(ctx, indexCM)
-	}
 
 	return r.Status().Update(ctx, runtime)
 }

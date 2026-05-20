@@ -194,7 +194,7 @@ func waitForCRDs(ctx context.Context, config *rest.Config) error {
 			list.SetGroupVersionKind(gvk)
 			if err := c.List(ctx, list); err != nil {
 				allFound = false
-				setupLog.V(1).Info("CRD not yet available", "crd", crd.resource)
+				setupLog.V(1).Info("CRD not yet available", "crd", crd.resource, "error", err.Error())
 				break
 			}
 		}
