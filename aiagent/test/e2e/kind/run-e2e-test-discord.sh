@@ -537,7 +537,19 @@ spec:
       discord:
         enabled: true
         tokenSecretRef: discord-bot-token
-        dmPolicy: "all"
+        # dmPolicy options (from OpenClaw v2026.5.12):
+        # - "pairing" - requires pairing before DM (most secure)
+        # - "allowlist" - DM only from listed user IDs
+        # - "open" - DM from any user (requires allowFrom: ["*"])
+        # - "disabled" - no DM allowed
+        #
+        # For known user IDs, use "allowlist" and list the IDs:
+        # dmPolicy: "allowlist"
+        # allowFrom: ["123456789012345678", "987654321098765432"]
+        #
+        # For all users (legacy "all" behavior):
+        dmPolicy: "open"
+        allowFrom: ["*"]
         mentionRequired: false
     agents:
       list:

@@ -496,6 +496,12 @@ func (c *ConfigConverter) convertChannelsConfig(channels *ChannelsInstanceConfig
 	// Token uses SecretInput pointing to env var: DISCORD_BOT_TOKEN
 	// ConfigDaemon resolves tokenSecretRef → writes token to hostPath
 	// Handler extracts token from hostPath → injects as subprocess env var
+	//
+	// dmPolicy options (from OpenClaw zod-schema.providers-core.ts):
+	// - "pairing" - requires pairing before DM (default)
+	// - "allowlist" - requires specific user IDs in allowFrom
+	// - "open" - allows all users (requires "*" in allowFrom)
+	// - "disabled" - disables DM
 	if channels.Discord != nil {
 		// Use AllowFrom if provided directly, otherwise use AllowedUsers
 		allowFrom := channels.Discord.AllowFrom
@@ -504,21 +510,35 @@ func (c *ConfigConverter) convertChannelsConfig(channels *ChannelsInstanceConfig
 		}
 
 		dmPolicy := channels.Discord.DmPolicy
-		if dmPolicy == "" {
+		// Normalize dmPolicy: "all" (legacy) → "open", empty → default based on allowFrom
+		if dmPolicy == "all" {
 			dmPolicy = "open"
-		} else if dmPolicy == "all" {
-			dmPolicy = "open"
+			// For "open" policy, OpenClaw requires "*" in allowFrom
+			allowFrom = []string{"*"}
+		} else if dmPolicy == "" {
+			// Default based on allowFrom content:
+			// - ["*"] → "open" (allow all users)
+			// - specific IDs → "allowlist" (allow listed users)
+			// - empty → "pairing" (require pairing)
+			if containsString(allowFrom, "*") {
+				dmPolicy = "open"
+			} else if len(allowFrom) > 0 {
+				dmPolicy = "allowlist"
+			} else {
+				dmPolicy = "pairing"
+			}
 		}
+		// For "open" policy without "*", add "*" to satisfy OpenClaw validation
+		if dmPolicy == "open" && !containsString(allowFrom, "*") {
+			allowFrom = []string{"*"}
+		}
+
 		cfg.Discord = &DiscordConfig{
 			Enabled:         channels.Discord.Enabled,
 			Token:           &SecretInput{Source: "env", Provider: "default", ID: "DISCORD_BOT_TOKEN"},
 			AllowFrom:       allowFrom,
 			DmPolicy:        dmPolicy,
 			MentionRequired: channels.Discord.MentionRequired,
-		}
-		// When dmPolicy is "all", set allowFrom to ["*"] to allow all users
-		if dmPolicy == "all" {
-			cfg.Discord.AllowFrom = []string{"*"}
 		}
 	}
 
@@ -1098,4 +1118,14 @@ type PluginsConfig struct {
 type PluginsLoadConfig struct {
 	// Paths to search for plugins
 	Paths []string `json:"paths,omitempty"`
+}
+
+// containsString checks if a string is in a slice.
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
