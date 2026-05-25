@@ -4,7 +4,7 @@
 
 **Resource Efficiency Challenge**: AI Agents exhibit long idle periods, bursty task execution, and varying resource demands. Traditional 1 Agent = 1 Pod approach wastes resources.
 
-**Design Purpose**: Define a core Kubernetes resource (like Pod) that abstracts ANY Agent framework (LangChain, ADK, OpenClaw, Hermes, etc.), externalizes platform capabilities, and enables fine-grained resource optimization at individual Agent level.
+**Design Purpose**: Define a core Kubernetes resource (like Pod) that abstracts ANY existing and new Agent framework (LangChain, ADK, OpenClaw, Hermes, etc.), externalizes platform capabilities, and enables fine-grained resource optimization at individual Agent level.
 
 ---
 
@@ -41,7 +41,7 @@
 
 AgentRuntime = Agent Handler + Agent Framework, corresponding to one Pod.
 
-- **Agent Handler**: Provided by the agent framework community, responsible for specific framework startup, configuration conversion, and AI Agent lifecycle.
+- **Agent Handler**: Provided by the agent framework community, responsible for specific framework startup, configuration conversion, and AI Agent lifecycle. Also enable AI agent workload aware resource consolidation.
 - **Agent Framework**: Agent framework like LangChain, ADK-Go, OpenClaw, Hermes which run AI agent
 
 ### 3.1 Process Mapping Modes (Verified in E2E Tests)
@@ -93,7 +93,7 @@ Pod (AgentRuntime)
 
 ## 4. AIAgent Design
 
-**Core Concept**: Independent business object, schedulable and migrateble across AgentRuntimes.
+**Core Concept**: Independent logic business object, schedulable and migrateble across AgentRuntimes, enabling resource efficiency technical realization.
 
 ### 4.1 Scheduling Modes
 
@@ -130,8 +130,8 @@ Pod (AgentRuntime)
 | Dimension | Harness | agentConfig |
 |-----------|---------|-------------|
 | **Positioning** | Platform engineering capabilities | Agent/Handler/Framework configuration |
-| **Examples** | Model, MCP, Sandbox, Skills | Prompt, protocol config |
-| **Processing** | Platform-level by Agent ID | Handler determines format |
+| **Examples** | Model, MCP, Sandbox, Skills, etc | Prompt, protocol config |
+| **Processing** | Platform-level | Handler determines format |
 | **Responsibility** | Platform manages | Handler processes |
 
 ---
