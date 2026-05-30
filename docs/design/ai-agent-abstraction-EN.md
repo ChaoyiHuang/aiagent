@@ -891,7 +891,7 @@ This design achieves the core resource definition for AI Agent in Kubernetes thr
 5. **agentConfig Abstraction**: Business configuration separated from platform capabilities, Handler determines format, platform provides delivery mechanism
 6. **Sandbox Integration**: Reuses agent-sandbox project, supports multiple execution environment forms
 7. **ImageVolume Pattern**: K8s 1.35+ feature for Handler-to-Framework filesystem access (verified)
-8. **Config Daemon**: Solution M implementation for agent config distribution without Pod K8s API access (verified)
+8. **Config Daemon**: Agent config distribution without Pod K8s API access (verified)
 
 Through this design, AI Agent becomes a first-class citizen in Kubernetes, a core abstraction similar to Pod, capable of adapting to any Agent framework, supporting complex business scenarios and resource efficiency purpose, while maintaining security isolation and multi-tenancy capabilities.
 
