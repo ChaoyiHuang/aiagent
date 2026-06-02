@@ -841,7 +841,7 @@ for event := range watcher.Events {
 - Handler is the sole process manager
 - Multi-process support verified (isolated mode)
 
-#### 7.3.3 Config Daemon (Solution M)
+#### 7.3.3 Config Daemon
 - DaemonSet watches AIAgent CRDs via Informer
 - Writes agent configs to hostPath: `/var/lib/aiagent/configs/<namespace>/<agent-name>/`
 - Creates `agent-index.yaml` for Handler discovery
